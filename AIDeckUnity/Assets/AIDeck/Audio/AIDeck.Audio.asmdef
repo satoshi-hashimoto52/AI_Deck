@@ -1,0 +1,14 @@
+{
+    "name": "AIDeck.Audio",
+    "rootNamespace": "AIDeck.Audio",
+    "references": ["AIDeck.Core", "AIDeck.Platform"],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

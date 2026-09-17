@@ -1,0 +1,28 @@
+{
+    "name": "AIDeck.Tests.PlayMode",
+    "rootNamespace": "AIDeck.Tests.PlayMode",
+    "references": [
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner",
+        "AIDeck.Core",
+        "AIDeck.Platform",
+        "AIDeck.Audio",
+        "AIDeck.UI",
+        "AIDeck.Host",
+        "AIDeck.App",
+        "UnityEngine.UI"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -14,16 +14,16 @@ of "done" can be checked rather than taken on trust.
 | `todo` | Not implemented yet. |
 | `manual` | Correct behaviour can only be confirmed on hardware or by ear. |
 
-Status as of **Phase 0 complete** (2026-09-18). Paths are relative to
+Status as of **Phase 1 complete** (2026-09-18). Paths are relative to
 `AIDeckUnity/Assets/`.
 
 ## 6.1 Track library
 
 | ID | Requirement | Implementation | Test | Status |
 | --- | --- | --- | --- | --- |
-| FR-001 | Load MP3 | `AIDeck/Core/Model/TrackInfo.cs` (format detection) | `TrackInfoTests`, `TrackLibraryTests` | partial — decode path lands in Phase 1 |
-| FR-002 | Load WAV | same | same | partial |
-| FR-003 | Load AIFF | same | same | partial |
+| FR-001 | Load MP3 | `TrackLoader`, `TrackImporter` | `AudioEnginePlayModeTests`; verified on a real 192 kbps MP3 | done |
+| FR-002 | Load WAV | `TrackLoader`, `TrackImporter` | `AudioEnginePlayModeTests` loads a generated WAV | done |
+| FR-003 | Load AIFF | `TrackLoader`, `TrackImporter` | verified on a real AIFF in the built Mac app | done |
 | FR-004 | Bulk add | `TrackLibrary.AddRange` | `TrackLibraryTests.BulkAdd…` | done |
 | FR-005 | Skip broken files with a reason | `TrackLibrary.AddReport` | `TrackLibraryTests.UnsupportedFiles…` | done |
 | FR-006 | Duplicate detection | `TrackLibrary.FindContentDuplicate` | `TrackLibraryTests.TheSameFile…` | done |
@@ -37,21 +37,21 @@ Status as of **Phase 0 complete** (2026-09-18). Paths are relative to
 
 | ID | Requirement | Implementation | Test | Status |
 | --- | --- | --- | --- | --- |
-| FR-020 | Load into deck A | `DeckModel.CompleteLoad` | `DeckModelTests` | done (logic) |
-| FR-021 | Load into deck B | same | same | done (logic) |
-| FR-022 | Play both decks at once | `AIDeck/Audio` | PlayMode | todo |
+| FR-020 | Load into deck A | `AudioEngine.LoadTrack`, `DeckModel.CompleteLoad` | `DeckModelTests`, `AudioEnginePlayModeTests` | done |
+| FR-021 | Load into deck B | same | same | done |
+| FR-022 | Play both decks at once | `DeckChannel`, `MasterBus` | `AudioChainTests`, `AudioEnginePlayModeTests.TwoDecksPlayTogether…` | done |
 | FR-023 | Play / pause / return to start | `DeckStateMachine`, `DeckModel` | `DeckStateMachineTests`, `DeckModelTests` | done |
 | FR-024 | Set and return to CUE | `CuePoint`, `DeckModel.CueReturn` | `CuePointTests`, `DeckModelTests` | done |
 | FR-025 | Seek | `DeckModel.Seek` | `DeckModelTests.Seek…` | done |
 | FR-026 | Elapsed and remaining time | `DeckSnapshot.RemainingSeconds`, `TrackInfo.FormatDuration` | `DeckModelTests`, `TrackInfoTests` | done |
-| FR-027 | Build, cache and show the waveform | `WaveformBuilder`, `WaveformData` | `AnalysisTests` | partial — display in Phase 1/2 |
+| FR-027 | Build, cache and show the waveform | `WaveformBuilder`, `WaveformCache`, `WaveformView` | `AnalysisTests`; rendered in the Mac app | done |
 | FR-028 | Change tempo | `TempoControl` | `TempoControlTests` | done |
 | FR-029 | Simple BPM analysis | `BpmAnalyzer` | `AnalysisTests` | done |
 | FR-030 | SYNC | `TempoControl.EnableSync` | `TempoControlTests.EnableSync…` | done |
 | FR-031 | Loop a region | `LoopRegion`, `DeckModel` | `LoopRegionTests`, `DeckModelTests` | done |
-| FR-032 | Simple scratch | `PlatterMotion` scratch | `PlatterMotionTests.Scratch…` | done (logic) |
-| FR-033 | BRAKE | `PlatterMotion.StartBrake` | `PlatterMotionTests.Brake…` | done (logic) |
-| FR-034 | BACKSPIN | `PlatterMotion.StartBackspin` | `PlatterMotionTests.Backspin…` | done (logic) |
+| FR-032 | Simple scratch | `PlatterMotion`, `DeckVoice` signed rate | `PlatterMotionTests`, `DeckVoiceTests` | done (host); controller gesture in Phase 2 |
+| FR-033 | BRAKE | `PlatterMotion.StartBrake` | `PlatterMotionTests`, `DeckModelTests` | done (host) |
+| FR-034 | BACKSPIN | `PlatterMotion.StartBackspin`, `DeckVoice` reverse | `PlatterMotionTests`, `DeckVoiceTests` | done (host) |
 
 ## 6.3 Mixer and effects
 
@@ -70,11 +70,11 @@ Status as of **Phase 0 complete** (2026-09-18). Paths are relative to
 
 | ID | Requirement | Implementation | Test | Status |
 | --- | --- | --- | --- | --- |
-| FR-050 | Record the master output | `WavRecorder` | `RecordingTests` | done (writer) |
-| FR-051 | Show recording state on both ends | `StateSnapshot.IsRecording` | `StateSnapshotTests` | partial — UI in Phase 1/2 |
+| FR-050 | Record the master output | `MasterBus` tap, `WavRecorder`, `RecorderPump` | `RecordingTests`, `AudioEnginePlayModeTests` | done |
+| FR-051 | Show recording state on both ends | `MixerPanelView`, `StateSnapshot.IsRecording` | `StateSnapshotTests`; shown in the Mac app | partial — iPad side in Phase 2 |
 | FR-052 | Show elapsed recording time | `WavRecorder.ElapsedSeconds` | `RecordingTests.ElapsedTime…` | done |
 | FR-053 | Save as WAV | `WavHeader`, `WavRecorder` | `RecordingTests` | done |
-| FR-054 | Show destination and file name | `WavRecorder.OutputPath` | `RecordingTests` | partial — UI in Phase 1 |
+| FR-054 | Show destination and file name | `WavRecorder.OutputPath`, Mac status line | `RecordingTests` | done |
 | FR-055 | A recording failure must not disturb playback | `WavRecorder` never throws | `RecordingTests.AnUnwritableTarget…` | done |
 
 ## 6.5 Networking
@@ -87,7 +87,7 @@ Status as of **Phase 0 complete** (2026-09-18). Paths are relative to
 | FR-063 | Controller actions reach the host | command router | PlayMode | todo |
 | FR-064 | Host state reaches the controller | `StateSnapshot` | `StateSnapshotTests` | done (payload) |
 | FR-065 | Reconnect after a brief outage | heartbeat | PlayMode | todo |
-| FR-066 | Release continuous controls on disconnect | `DeckModel.ReleaseContinuousControls` | `DeckModelTests`, `PlatterMotionTests.Cancel…` | done (logic) |
+| FR-066 | Release continuous controls on disconnect | `DeckModel.ReleaseContinuousControls`, `AudioEngine.AllStop` | `DeckModelTests`, `AudioEnginePlayModeTests.AllStop…` | done (host); wiring in Phase 3 |
 | FR-067 | Ignore stale sequence numbers | `SequenceGate` | `SequenceGateTests` | done |
 | FR-068 | Reject an incompatible protocol version | `MessageCodec`, `ProtocolInfo` | `MessageCodecTests.IncompatibleVersion…` | done |
 
@@ -101,7 +101,7 @@ Status as of **Phase 0 complete** (2026-09-18). Paths are relative to
 | FR-073 | Touch cancel releases the control | `PlatterMotion.Cancel` | `PlatterMotionTests.Cancel…` | done (logic) |
 | FR-074 | Backgrounding releases held controls | `AIDeck/Controller` lifecycle | PlayMode | todo |
 | FR-075 | Important controls inside the safe area | `docs/mockups/`, `AIDeck/Controller` | manual | todo |
-| FR-076 | Suppress auto-sleep while playing | `AppSettings.PreventSleepWhilePlaying` | `AppSettingsTests` | partial |
+| FR-076 | Suppress auto-sleep while playing | `AppBootstrap` sets `Screen.sleepTimeout` | `AppSettingsTests` | partial — tied to the user setting in Phase 2 |
 
 ## 6.7 Settings
 
@@ -117,8 +117,8 @@ Status as of **Phase 0 complete** (2026-09-18). Paths are relative to
 
 | ID | Requirement | How it is met | Status |
 | --- | --- | --- | --- |
-| NFR-001 | Audio independent of UI load | `OnAudioFilterRead` allocates nothing and takes no lock; `AudioRingBuffer` is lock-free | partial — measured in Phase 4 |
-| NFR-002 | Never block the main thread | decode on coroutines, analysis on workers | partial |
+| NFR-001 | Audio independent of UI load | one `OnAudioFilterRead`, no allocation or locks after `Prepare`; `AudioRingBuffer` is lock-free | partial — measured in Phase 4 |
+| NFR-002 | Never block the main thread | decode on coroutines, analysis on `ThreadPool`, disk on the recorder pump | done for Phase 1 paths |
 | NFR-003 | No perceptible control lag on a normal LAN | UDP fast channel, coalescing queue | manual |
 | NFR-004 | Bounded send queue | `OutboundQueue`, cap 512, fast messages coalesce | done |
 | NFR-005 | 30 minutes without a crash, leak or dropout | no per-frame allocation on the audio path | manual — Phase 4 |
@@ -126,15 +126,15 @@ Status as of **Phase 0 complete** (2026-09-18). Paths are relative to
 | NFR-007 | Exceptions surfaced, not swallowed | `DiagnosticLog.Exception` separates user notice from diagnostics | done |
 | NFR-008 | Non-destructive handling of media | no write path to the source file | done |
 | NFR-009 | Gain limiting before output | `AudioSafety.SoftLimit` on the master bus | done |
-| NFR-010 | No audio after a disconnect or quit | fade-out then stop on both paths | partial — Phase 3 |
+| NFR-010 | No audio after a disconnect or quit | `AudioEngine.Shutdown` clears both channels and detaches the output | `AudioEnginePlayModeTests.ShutdownLeavesNothingPlaying`; disconnect path in Phase 3 |
 
 ## 9 Safety
 
 | Rule | How it is met | Status |
 | --- | --- | --- |
-| Short fade on play, stop and load | ~12 ms gain ramp in `DeckDsp` | partial — Phase 1 |
+| Short fade on play, stop and load | 12 ms ramp in `DeckChannel`, 3 ms after a loop wrap; the transport waits for it (covered by `AudioChainTests` and `AudioEnginePlayModeTests`) | done |
 | No NaN / Infinity / out-of-range to audio | `AudioSafety`, sanitising setters everywhere | done |
-| Release continuous state on disconnect | `DeckModel.ReleaseContinuousControls` | done (logic) |
+| Release continuous state on disconnect | `DeckModel.ReleaseContinuousControls`, `AudioEngine.AllStop` | done (host); wiring in Phase 3 |
 | Configurable disconnect policy, safe default | `AppSettings.OnDisconnect` = `StopPlayback` | done |
 | Never modify the source file on error | no write path | done |
 | Recoverable partial recording | header sizes refreshed every 5 s | done |

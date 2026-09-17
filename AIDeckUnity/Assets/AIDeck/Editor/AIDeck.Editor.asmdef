@@ -1,0 +1,23 @@
+{
+    "name": "AIDeck.Editor",
+    "rootNamespace": "AIDeck.Editor",
+    "references": [
+        "AIDeck.Core",
+        "AIDeck.Platform",
+        "AIDeck.Audio",
+        "AIDeck.UI",
+        "AIDeck.Host",
+        "AIDeck.App"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -44,14 +44,15 @@ reference that does not compile.
 
 | Assembly | Path | References | Notes |
 | --- | --- | --- | --- |
-| `AIDeck.Core` | `Assets/AIDeck/Core` | *(none)* | `noEngineReferences: true` — pure .NET. |
-| `AIDeck.Audio` | `Assets/AIDeck/Audio` | Core | Unity audio graph, decoding, recording pump. |
-| `AIDeck.Net` | `Assets/AIDeck/Net` | Core | Sockets, discovery, session lifecycle. |
-| `AIDeck.UI` | `Assets/AIDeck/UI` | Core | Shared widgets, theme, touch routing. |
-| `AIDeck.Host` | `Assets/AIDeck/Host` | Core, Audio, Net, UI | Mac application. |
-| `AIDeck.Controller` | `Assets/AIDeck/Controller` | Core, Net, UI | iPad application. |
+| `AIDeck.Core` | `Assets/AIDeck/Core` | *(none)* | `noEngineReferences: true` — pure .NET. Includes the whole signal path. |
+| `AIDeck.Platform` | `Assets/AIDeck/Platform` | Core | Paths, atomic file writes, settings and library stores, device info. |
+| `AIDeck.Audio` | `Assets/AIDeck/Audio` | Core, Platform | Unity audio graph, decoding, import, recording pump. |
+| `AIDeck.Net` | `Assets/AIDeck/Net` | Core, Platform | Sockets, discovery, session lifecycle (Phase 3). |
+| `AIDeck.UI` | `Assets/AIDeck/UI` | Core, Platform, uGUI | Shared widgets, theme, touch routing. |
+| `AIDeck.Host` | `Assets/AIDeck/Host` | Core, Platform, Audio, Net, UI | Mac application. |
+| `AIDeck.Controller` | `Assets/AIDeck/Controller` | Core, Platform, Net, UI | iPad application (Phase 2). |
 | `AIDeck.App` | `Assets/AIDeck/App` | all of the above | Bootstrap and role selection. |
-| `AIDeck.Editor` | `Assets/AIDeck/Editor` | Core, App | Build pipeline, editor tooling. |
+| `AIDeck.Editor` | `Assets/AIDeck/Editor` | all of the above | Build pipeline, scene generation. |
 | `AIDeck.Tests.EditMode` | `Assets/Tests/EditMode` | Core | Pure logic, no engine needed. |
 | `AIDeck.Tests.PlayMode` | `Assets/Tests/PlayMode` | Core, Audio, Net, UI, Host, Controller | Runtime behaviour. |
 
@@ -112,7 +113,9 @@ same defended path.
 
 ### 4.2 `AIDeck.Audio`
 
-Wraps `AIDeck.Core` in Unity's audio graph. See [`AUDIO_ENGINE.md`](AUDIO_ENGINE.md).
+The Unity side of the audio: decoding through `UnityWebRequestMultimedia`, the single
+`OnAudioFilterRead` that drives the Core signal path, the import pipeline and the recorder's
+writer thread. The mixing itself is in Core. See [`AUDIO_ENGINE.md`](AUDIO_ENGINE.md).
 
 ### 4.3 `AIDeck.Net`
 
@@ -196,6 +199,6 @@ submission, no purchases, no plugin hosting, no video.
 
 V1 changes tempo by changing playback rate, so pitch moves with tempo. This is explicitly
 allowed by §8. The seam for a future key-lock implementation is `TempoControl.EffectiveRate`
-and the rate application in `DeckAudioSource`: a time-stretch implementation would replace
+and the resampling read pointer in `DeckVoice`: a time-stretch implementation would replace
 the latter without touching the former. See
 [`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md).

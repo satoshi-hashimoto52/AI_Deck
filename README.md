@@ -56,10 +56,13 @@ Open `AIDeckUnity/` in Unity 6000.3.23f1.
 ### Running it
 
 1. Start AI Deck on the Mac.
-2. Add music: drag files onto the library, or use **Add Files…**.
+2. Add music: put files in `~/Music/AI Deck` (created on first launch) and press **ADD
+   FILES**, or type any other file or folder path into the field first. Unity players have no
+   native file dialog and AI Deck uses no third-party plug-ins, so a typed path is how files
+   get in.
 3. Start AI Deck on the iPad, in landscape.
 4. The iPad finds the Mac automatically. If your network blocks broadcast, type the Mac's
-   IP address — the Mac shows it in its status bar.
+   IP address — the Mac shows it in its top bar.
 5. Tap **A** or **B** next to a track to load it onto that deck.
 6. Play both, and move the crossfader between them.
 7. **● REC** records the master output to a WAV file. The Mac shows where it was saved.
@@ -123,8 +126,8 @@ Exit code 0 means everything passed. See [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md
 
 | Phase | Scope | State |
 | --- | --- | --- |
-| 0 | Project, assemblies, core domain, test harness, design docs | **complete** — 283 EditMode tests passing |
-| 1 | Mac-only DJ: library, two decks, waveform, mixer, effects, recording, Mac UI | in progress |
+| 0 | Project, assemblies, core domain, test harness, design docs | **complete** |
+| 1 | Mac-only DJ: library, two decks, waveform, mixer, effects, recording, Mac UI | **complete** — 326 EditMode + 13 PlayMode tests passing, Mac app builds and runs |
 | 2 | iPad controller UI | not started |
 | 3 | Networking | not started |
 | 4 | Builds and quality | not started |

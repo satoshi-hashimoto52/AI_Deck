@@ -53,7 +53,13 @@ per-test detail.
 | Safe behaviour on invalid input | Throughout — every fixture has NaN / out-of-range / corrupt-input cases |
 
 Supporting fixtures: `AudioSafetyTests`, `JsonTests`, `TrackLibraryTests`,
-`PlatterMotionTests`, `AnalysisTests`, `OutboundQueueTests`.
+`PlatterMotionTests`, `AnalysisTests`, `OutboundQueueTests`, `DeckVoiceTests`,
+`AudioChainTests`.
+
+`DeckVoiceTests` and `AudioChainTests` are worth calling out: because the whole signal path
+lives in `AIDeck.Core`, playback, resampling, reverse, loop wrapping, the gain fades and the
+master limiter are all driven block by block here with **no audio device**. That is what makes
+the §9 fade rules and the NFR-009 limiting checkable rather than merely asserted.
 
 ### Principles
 
@@ -69,16 +75,66 @@ Supporting fixtures: `AudioSafetyTests`, `JsonTests`, `TrackLibraryTests`,
 
 ## 4. PlayMode coverage (§10.2)
 
-| §10.2 item | Planned fixture | Status |
+| §10.2 item | Fixture | Status |
 | --- | --- | --- |
 | Simulated controller connects to the host in-process | `HostSessionPlayModeTests` | Phase 3 |
 | Simulated controller drives a deck | `HostSessionPlayModeTests` | Phase 3 |
 | Host state reaches the simulated controller | `HostSessionPlayModeTests` | Phase 3 |
 | Disconnect and reconnect | `HostSessionPlayModeTests` | Phase 3 |
-| High-rate fader input does not grow the queue | `OutboundQueue` (EditMode) + `HostSessionPlayModeTests` | Phase 3 |
-| Two decks playing while recording | `AudioEnginePlayModeTests` | Phase 1 |
+| High-rate fader input does not grow the queue | `OutboundQueueTests` (EditMode) + `HostSessionPlayModeTests` | EditMode done, wiring Phase 3 |
+| Two decks playing while recording | `AudioEnginePlayModeTests.TwoDecksPlayTogetherAndRecordToAWavFile` | **done** |
 
-## 5. Manual tests (§10.3)
+`AudioEnginePlayModeTests` also covers loading a real file, a failing load leaving the other
+deck alone, ejecting, the pause fade, `AllStop`, the default disconnect policy, a recording
+failure not disturbing playback, and shutdown leaving nothing playing.
+
+The fixture generates its own WAV with the shipping `WavRecorder` rather than committing a
+binary test asset, so every load test is also an end-to-end check that what AI Deck writes,
+AI Deck can read.
+
+### When there is no audio device
+
+Batch mode can run without one, in which case Unity never calls `OnAudioFilterRead` and no
+samples can be produced. Tests that depend on it report **inconclusive**, never passed —
+§14 draws a hard line between a test that was not run and one that succeeded. On the
+development Mac the audio device *is* available in batch mode, and the recording test
+verifies the file actually contains audio.
+
+## 5. Driving the built Mac app without clicking
+
+The Mac host accepts three startup options so a build can be brought up in a known state for
+inspection. They are part of the product, documented here because this is where they are used.
+
+```bash
+"build/mac/AI Deck.app/Contents/MacOS/AI Deck" \
+    -aideck-import "~/Music/AI Deck" \
+    -aideck-autoplay
+```
+
+| Option | Effect |
+| --- | --- |
+| `-aideck-import <path>` | Import a file or folder at launch |
+| `-aideck-autoload` | Load the first two library tracks onto decks A and B |
+| `-aideck-autoplay` | As above, then start both decks |
+
+`-aideck-role host\|controller` (from `AppRoleResolver`) overrides the platform default and is
+how a controller is run against a host on one Mac for the §10.2 integration tests.
+
+### Phase 1 verification performed this way
+
+Run on the built app with three generated files, one per supported container:
+
+| Check | Result |
+| --- | --- |
+| MP3, WAV and AIFF all import | 3 tracks, formats shown correctly |
+| Tempo analysis | 123.7 / 127.7 / 139.6 BPM against true 124 / 128 / 140 |
+| Waveforms render with transients | yes, both decks |
+| Two decks play together | yes |
+| Duplicate detection on re-import | "Added 0 tracks, skipped 3. This file is already in the library." |
+| End of track stops the deck | yes, with a notice |
+| No exceptions in the player log | none |
+
+## 6. Manual tests (§10.3)
 
 Run in Phase 5 on real hardware, with the result recorded as an Issue comment. None of
 these may be marked complete from a simulator or from reasoning.
@@ -94,7 +150,7 @@ these may be marked complete from a simulator or from reasoning.
 | M7 | Background and return | No held control survives; state is correct on return |
 | M8 | 30-minute playback | No crash, no dropout, no unbounded memory growth |
 
-## 6. Definition of Done mapping (§13)
+## 7. Definition of Done mapping (§13)
 
 | DoD item | Evidence |
 | --- | --- |

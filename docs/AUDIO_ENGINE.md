@@ -8,39 +8,60 @@ All audio runs on the Mac host. The iPad never decodes or plays track audio.
 ## 1. Signal path
 
 ```
-  AudioClip A ─► AudioSource A ─► DeckDsp A ──┐
-                 (rate, seek)     filter      │
-                                  echo        │
-                                  gain ramp   │
-                                              ▼
-                                        MasterDsp ─► AudioListener ─► output
-                                        master gain
-                                        soft limiter          │
-                                        peak / RMS / clip     └─► WavRecorder
-  AudioClip B ─► AudioSource B ─► DeckDsp B ──┘
-                                              (ring buffer → writer thread → .wav)
+  DeckVoice A --> DeckChannel A --+        AudioOutput (OnAudioFilterRead
+  (own resampler,   filter        |         on the AudioListener object)
+   signed rate)     echo          |
+                    gain ramp     v
+                              MasterBus --> Unity output device
+  DeckVoice B --> DeckChannel B --+   master gain
+  (own resampler,   filter            soft limiter          |
+   signed rate)     echo              peak / RMS / clip     +--> WavRecorder
+                    gain ramp                                    (ring buffer ->
+                                                                  writer thread -> .wav)
 ```
 
-`DeckDsp` and `MasterDsp` are `MonoBehaviour`s implementing `OnAudioFilterRead`. Unity calls
-that on the audio thread with the interleaved buffer of the object it sits on: on an
-`AudioSource`'s object it is that source's output, on the `AudioListener`'s object it is the
-final mix. That gives a per-deck insert point and a master insert point without an
-`AudioMixer` asset, which keeps the whole graph in reviewable source (see
-[`ARCHITECTURE.md`](ARCHITECTURE.md) §3).
+**AI Deck renders its own audio.** It does not play tracks through `AudioSource`. One
+`OnAudioFilterRead` on the `AudioListener` object produces the whole mix: each `DeckVoice`
+resamples from the decoded PCM at a signed, per-sample rate, `DeckChannel` applies that
+deck's filter, echo and gain, and `MasterBus` applies master gain, the limiter, metering and
+the recorder tap.
+
+The reason is scratching and BACKSPIN (FR-032, FR-034). Those need a rate that is signed,
+continuously variable and applied per sample. `AudioSource.pitch` reverses unreliably and
+quantises rate changes to DSP block boundaries, and the position it reports is where it has
+already got to rather than where the deck logic wants it. Owning the read pointer gives exact
+reverse, exact loop wrapping with no device seek, and a playhead the deck model controls.
+
+The second benefit is structural: `DeckVoice`, `DeckChannel` and `MasterBus` all live in
+`AIDeck.Core`, which cannot reference UnityEngine. The whole signal path is therefore driven
+block by block in EditMode tests with no audio device - which is how the fade behaviour of
+section 9 and the limiting of NFR-009 are actually verified rather than merely asserted.
+
+### Keeping the graph alive
+
+Unity only calls `OnAudioFilterRead` while the audio graph is running. A silent looping
+`AudioSource` on a **child** object keeps it running when nothing is playing, so gain ramps
+and echo tails keep advancing instead of freezing part way. It has to be a child: a source on
+the listener's own object would take over that object's filter chain, and `AudioOutput` would
+receive the source's output rather than the final mix.
 
 ## 2. Audio thread discipline (NFR-001)
 
 Inside `OnAudioFilterRead`:
 
-* **no allocation** — every buffer is allocated once at construction and reused;
-* **no locks** — parameters cross from the main thread through plain fields that are
-  written once per frame and read once per buffer; the worst case is a parameter landing one
-  buffer late, which is inaudible;
-* **no file I/O** — the recorder's `Submit` only writes to a lock-free ring buffer;
-* **no Unity API calls** — `Time`, `Debug` and the object model are all off limits there.
+* **no allocation** - every buffer is allocated once in `DeckChannel.Prepare` and reused;
+* **no locks** - parameters cross from the main thread through plain and `volatile` fields;
+  the worst case is a parameter landing one buffer late, which is inaudible;
+* **no file I/O** - the recorder's `Submit` only writes to a lock-free ring buffer;
+* **no Unity API calls** - `Time`, `Debug` and the object model are all off limits.
 
-Everything the audio thread calls into lives in `AIDeck.Core`, which cannot reference
-UnityEngine at all. The assembly definition enforces the rule rather than trusting it.
+Everything the audio thread calls into lives in `AIDeck.Core`, whose assembly definition sets
+`noEngineReferences: true`. The rule is enforced by the compiler rather than by discipline.
+
+The playhead crosses threads through an explicit atomic: `DeckVoice` publishes it as the bits
+of a `double` via `Interlocked.Exchange`, and seeks arrive through a pending-seek slot the
+audio thread consumes. A plain `double` field could be read in a torn state, and a torn
+playhead is a jump to a random position.
 
 ## 3. Loading (FR-001…FR-003, FR-020, FR-021)
 
@@ -73,29 +94,27 @@ that the library exposes no such method.
 
 ### Position authority
 
-`AudioSource.timeSamples` is the physical truth; `DeckModel.PositionSeconds` is the logical
-truth. Once per frame the host reads the device position and calls
-`DeckModel.ReportPosition`, which returns either `null` ("carry on") or a corrected position
-when a loop wrapped or the track ended. Only then does the host seek the source.
+`DeckVoice` owns the playhead and advances it per sample; `DeckModel` owns the rules. Once per
+frame `AudioEngine` reads the voice's published position and calls `DeckModel.ReportPosition`,
+which returns either `null` ("carry on") or a corrected position when a loop wrapped or the
+track ended. Only then does the engine seek the voice.
 
-Asking the model rather than the device means loop wrapping, the end-of-track stop and the
-reverse-past-zero rule are all pure logic with EditMode tests, and the audio device is told
-what to do rather than interrogated about what it did.
+The voice also wraps an active loop itself, sample-accurately, so a loop point never costs a
+buffer of silence while the main thread catches up. The model's wrap is the same arithmetic
+and therefore agrees; it exists so the rule is testable without an audio device.
 
 ### Rate (FR-028)
 
-`DeckModel.EffectiveRate = TempoControl.EffectiveRate × PlatterMotion.Rate`, applied to
-`AudioSource.pitch`.
+`DeckModel.EffectiveRate = TempoControl.EffectiveRate x PlatterMotion.Rate`, assigned to
+`DeckVoice.Rate` and applied per sample with linear interpolation between source frames.
 
-Unity's `pitch` resamples, so **pitch moves with tempo**. §8 of the master issue explicitly
-allows this for V1. `TempoControl.EffectiveRate` is the seam a key-lock implementation would
-plug into; nothing above it assumes the rate and the musical pitch are linked. See
-[`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md).
+Resampling moves pitch with tempo, so **pitch moves with tempo**. Section 8 of the master
+issue explicitly allows this for V1. `TempoControl.EffectiveRate` is the seam a key-lock
+implementation would plug into; nothing above it assumes rate and musical pitch are linked.
 
-The final rate is clamped to ±6× by `AudioSafety.Sanitize` before it reaches the source, and
-NaN maps to 1.0. A corrupt rate is the one value that can make the audio device misbehave
-rather than merely sound wrong, so it is defended twice: once in `TempoControl`, once at the
-point of application.
+The rate is clamped twice - once in `TempoControl`, once on assignment to the voice - and NaN
+maps to 1.0. A corrupt rate is the one value that can make playback run away rather than
+merely sound wrong.
 
 ### SYNC (FR-030)
 
@@ -123,12 +142,13 @@ therefore restores exactly the fader's own rate with no drift.
 `Cancel()` collapses any gesture to free running and is called on touch cancel (FR-073), app
 backgrounding (FR-074) and disconnect (FR-066).
 
-Reverse playback relies on a negative `AudioSource.pitch`, which Unity supports for
-`DecompressOnLoad` clips. Fidelity is limited — see `KNOWN_LIMITATIONS.md`.
+Reverse playback is a negative `DeckVoice.Rate`: the read pointer steps backwards through the
+decoded samples. Fidelity is limited by the linear interpolation between frames rather than by
+anything in the engine — see `KNOWN_LIMITATIONS.md`.
 
 ## 6. Mixer and effects
 
-Per deck, in `DeckDsp.OnAudioFilterRead`:
+Per deck, in `DeckChannel.RenderInto`:
 
 1. **Filter** — `MultiChannelFilter`, one zero-delay-feedback state-variable filter per
    channel. Chosen over a biquad because it stays stable while the cutoff is swept fast,
@@ -145,7 +165,7 @@ The bipolar FILTER knob maps to a low-pass sweeping down from 20 kHz on the left
 high-pass sweeping up from 20 Hz on the right, geometrically so the knob feels even across
 the band. A ±0.02 dead zone at the centre guarantees a genuine bypass.
 
-In `MasterDsp`:
+In `MasterBus.Process`:
 
 4. **Master gain**, smoothed the same way.
 5. **Soft limiter** — `AudioSafety.SoftLimit`. Below 0.98 the signal passes untouched; above
@@ -159,16 +179,22 @@ The recording is taken **after** the limiter, so the file matches what was heard
 
 ## 7. Fades (§9)
 
-Every discontinuity gets a ~12 ms ramp: play, pause, cue jump, load, eject, disconnect stop,
-application quit. Implemented as a per-sample gain ramp in `DeckDsp` toward a target the main
-thread sets.
+Every discontinuity gets a ramp: play, pause, cue jump, load, eject, disconnect stop and
+application quit. It is a per-sample gain ramp in `DeckChannel` toward a target the main
+thread sets, and the transport waits for it: `AudioEngine` only stops a voice once
+`DeckChannel.IsSilent` reports the ramp has run out (with a 0.5 s timeout so a stop can never
+hang if the device has stopped producing callbacks).
 
-12 ms is below the threshold at which a DJ perceives the start as soft, and far above the
-~0 ms that produces a click. Cutting a playing buffer to zero in one sample is a step edge —
-broadband, at full output level, through whatever the Mac is plugged into.
+**12 ms** for a transport change. That is below the threshold at which a DJ perceives the
+start as soft, and far above the ~0 ms that produces a click. Cutting a playing buffer to zero
+in one sample is a step edge: broadband, at full output level, through whatever the Mac is
+plugged into.
 
-On quit, `OnApplicationQuit` ramps both decks out and waits for the ramp before releasing the
-device (NFR-010).
+**3 ms** after a loop wrap. A full 12 ms fade at a loop point would be an audible dip on a
+tight loop, while 3 ms is long enough to remove the edge and short enough to stay inaudible.
+
+On quit, `AudioEngine.Shutdown` clears both channels and detaches the output before the
+device is released (NFR-010).
 
 ## 8. Recording (FR-050…FR-055)
 
@@ -193,20 +219,51 @@ File name: `AIDeck_YYYYMMDD_HHMMSS.wav` — sortable, and derived from nothing b
 per second, stored as two byte arrays. A three-minute track is about 31 kB — small enough to
 cache and to stream to the iPad in a handful of frames.
 
-**BPM** (FR-029): `BpmAnalyzer` computes a short-time energy envelope, half-wave rectifies
-its first difference into an onset function, removes the running mean, and autocorrelates
-over lags corresponding to 70–190 BPM. No FFT and no dependency.
+**BPM** (FR-029): `BpmAnalyzer` high-passes a mono mixdown at 200 Hz, measures short-time
+energy over an overlapping 40 ms window, half-wave rectifies the first difference into an
+onset function, and autocorrelates over lags corresponding to 70-190 BPM. No FFT and no
+dependency.
 
-It reports a confidence and returns *no tempo* below 0.15 rather than guessing. A wrong BPM
-is worse than an absent one, because SYNC would act on it. Accuracy on strongly percussive
-material is good; on ambient or rubato material it correctly declines to answer.
+Three details are load-bearing, and each was added after the naive version got a real track
+wrong:
+
+* **The high-pass.** A sustained bass note carries a great deal of energy and no timing.
+  Without removing it, a click track over a strong bass line read 146 BPM instead of 128.
+* **The overlapping energy window.** Measuring RMS over a window as short as the hop makes the
+  envelope track the *waveform* of the bass rather than the loudness of the mix - a 55 Hz note
+  has an 18 ms period, far longer than a 5 ms hop. This alone moved a 128 BPM track to 117.6.
+* **Sub-sample peak interpolation.** At a 200 Hz envelope rate, 128 BPM is a lag of 93.75
+  samples. Rounding to an integer lag is a 0.3 % error - several beats of drift over a
+  four-minute track.
+
+The autocorrelation is normalised by the energy of both overlapping windows, so no lag is
+favoured by arithmetic alone, and confidence is the winner's *prominence* above the mean of
+the search range. On the project's test material that reads 0.96-1.00 for a clear beat and
+below 0.05 for white noise; the acceptance floor is 0.3. A wrong BPM is worse than an absent
+one, because SYNC would act on it. On ambient or rubato material the analyser correctly
+declines to answer.
 
 ## 10. Device and format
 
 The host adopts Unity's output sample rate and channel count as reported by
-`AudioSettings.outputSampleRate` and the current `AudioConfiguration`, and configures the
-DSP buffer for low latency. All Core DSP objects take the sample rate at construction and are
-rebuilt if the device configuration changes under them (`AudioSettings.OnAudioConfigurationChanged`).
+`AudioSettings.outputSampleRate` and the current `AudioConfiguration`. Every Core DSP object
+takes the sample rate at construction, so a device change rebuilds them
+(`AudioSettings.OnAudioConfigurationChanged`); a recording in progress is stopped and the user
+is told, because the file's header already declares the old format.
 
-Mixing a clip whose sample rate differs from the device is handled by Unity's own
-resampling in `AudioSource`.
+A file whose sample rate differs from the device is resampled by `DeckVoice` as part of the
+same read-pointer arithmetic that applies the tempo rate: the step per output frame is
+`rate x (fileRate / deviceRate)`.
+
+A block whose channel count or sample rate does not match what `DeckChannel.Prepare` was given
+is skipped rather than processed, because rebuilding the DSP objects there would allocate on
+the audio thread. The engine rebuilds them on the next frame.
+
+## 11. Loading files without a file picker
+
+A standalone Unity player has no native file dialog, and adding one would mean a plug-in of
+unclear provenance, which section 14 rules out. The Mac window therefore takes a typed or
+pasted path - a file or a folder - and `MusicFolderScanner` walks it, depth- and count-limited
+so that pointing it at a home directory returns a useful set quickly instead of stat-ing the
+whole disk. `~/Music/AI Deck` is created on first run and pre-filled in the field, so there is
+an obvious place to drop music.

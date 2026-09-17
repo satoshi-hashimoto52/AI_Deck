@@ -142,6 +142,64 @@ namespace AIDeck.Tests.EditMode.Core
         }
 
         [Test]
+        public void ATrackWithASustainedBassLineIsStillDetected()
+        {
+            // Regression: with an energy window as short as the hop, the envelope tracked the
+            // waveform of the bass rather than the loudness of the mix, and a 128 BPM track
+            // was reported as 117.6. A 55 Hz note has an 18 ms period — far longer than the
+            // 5 ms hop — so its own cycle appeared in the envelope and outweighed the beat.
+            const double bpm = 128d;
+            var samples = ClickTrackWithBass(bpm, 60, 55d);
+            var result = BpmAnalyzer.Analyse(samples, 1, SampleRate);
+
+            Assert.That(result.IsUsable, Is.True,
+                $"detected {result.Bpm} at confidence {result.Confidence}");
+            Assert.That(result.Bpm, Is.EqualTo(bpm).Within(2d));
+        }
+
+        [Test]
+        public void FractionalPeriodTemposAreResolvedByInterpolation()
+        {
+            // 128 BPM is a lag of 93.75 envelope samples. Without sub-sample interpolation the
+            // nearest integer lag is a 0.3 % error, which is several beats of drift over a
+            // four-minute track.
+            var result = BpmAnalyzer.Analyse(ClickTrack(128d, 60), 1, SampleRate);
+            Assert.That(result.IsUsable, Is.True);
+            Assert.That(result.Bpm, Is.EqualTo(128d).Within(1d));
+        }
+
+        [Test]
+        public void WhiteNoiseIsRejectedByTheConfidenceFloor()
+        {
+            var random = new Random(4242);
+            var samples = new float[SampleRate * 40];
+            for (var i = 0; i < samples.Length; i++)
+            {
+                samples[i] = (float)(random.NextDouble() * 2d - 1d) * 0.3f;
+            }
+
+            var result = BpmAnalyzer.Analyse(samples, 1, SampleRate);
+            Assert.That(result.IsUsable, Is.False,
+                $"noise must not produce a tempo (got {result.Bpm} at {result.Confidence})");
+        }
+
+        [Test]
+        public void ConfidenceIsHigherForAClearBeatThanForNoise()
+        {
+            var beat = BpmAnalyzer.Analyse(ClickTrack(128d, 60), 1, SampleRate);
+
+            var random = new Random(99);
+            var noiseSamples = new float[SampleRate * 40];
+            for (var i = 0; i < noiseSamples.Length; i++)
+            {
+                noiseSamples[i] = (float)(random.NextDouble() * 2d - 1d) * 0.3f;
+            }
+
+            var noise = BpmAnalyzer.Analyse(noiseSamples, 1, SampleRate);
+            Assert.That(beat.Confidence, Is.GreaterThan(noise.Confidence * 3d));
+        }
+
+        [Test]
         public void SilenceProducesNoTempoRatherThanAGuess()
         {
             var result = BpmAnalyzer.Analyse(new float[SampleRate * 80], 1, SampleRate);
@@ -193,6 +251,21 @@ namespace AIDeck.Tests.EditMode.Core
                 {
                     samples[frame * channels + ch] = value;
                 }
+            }
+
+            return samples;
+        }
+
+        /// <summary>
+        /// A click track over a sustained low bass note — the shape of real electronic music,
+        /// and the case that exposed the envelope aliasing bug.
+        /// </summary>
+        private static float[] ClickTrackWithBass(double bpm, double seconds, double bassHz)
+        {
+            var samples = ClickTrack(bpm, seconds);
+            for (var i = 0; i < samples.Length; i++)
+            {
+                samples[i] += 0.45f * (float)Math.Sin(2d * Math.PI * bassHz * i / SampleRate);
             }
 
             return samples;

@@ -8,6 +8,64 @@ Requirement IDs refer to
 
 ## [Unreleased]
 
+### Added — Phase 1: Mac-only DJ (2026-09-18)
+
+* **Own playback engine.** `DeckVoice` resamples from decoded PCM at a signed, per-sample
+  rate instead of driving `AudioSource.pitch`. Scratching and BACKSPIN need reverse and
+  continuous rate changes, which Unity's pitch control does not do reliably, and owning the
+  read pointer also gives exact loop wrapping with no device seek. Because it lives in
+  `AIDeck.Core`, playback is now testable with no audio device.
+* `DeckChannel` (filter, echo, gain ramp, metering) and `MasterBus` (master gain, soft
+  limiter, metering, recorder tap), both in Core and both driven block by block in tests.
+* `AudioOutput`: a single `OnAudioFilterRead` on the `AudioListener` produces the whole mix,
+  with a silent child source keeping Unity's DSP graph alive so fades and echo tails do not
+  freeze when nothing is playing.
+* `AudioEngine`: reconciles the deck models with the audio each frame, owns loading, ejecting,
+  recording and the disconnect policy, and builds the state snapshot both the Mac UI and (from
+  Phase 3) the controller render.
+* `TrackLoader` decodes MP3, WAV and AIFF through the system decoders; `TrackImporter` adds a
+  folder, analysing waveform and tempo on a worker thread and reporting every skipped file.
+* `AIDeck.Platform`: application paths, atomic write-then-rename file saving, settings and
+  library stores, waveform cache, LAN address lookup, and a depth-limited music folder scanner.
+* `AIDeck.UI`: theme taken from the mock-up, a multi-touch router that reads `Input.touches`
+  directly so cancelled pointers release their control, procedurally generated circle and
+  rounded-rectangle sprites (no binary assets), and the shared widgets — button, fader, knob,
+  jog wheel, waveform, meter, track list — plus the deck, mixer and browser panels the Mac and
+  iPad both use.
+* `AIDeck.Host`: the Mac window of §5.6 — library import and removal, search, both decks,
+  mixer, effects, recording, the Mac's own LAN address, and a one-line log summary.
+* Editor build pipeline for macOS and iOS, scene generation, and an `Info.plist`
+  post-processor that adds `NSLocalNetworkUsageDescription` — without it both platforms refuse
+  LAN access silently and discovery would simply never find anything.
+* Startup options `-aideck-import`, `-aideck-autoload`, `-aideck-autoplay` so a build can be
+  brought up in a known state for inspection (see `docs/TEST_PLAN.md`).
+* Tests: EditMode 326 passing (was 283), PlayMode 13 passing.
+
+### Fixed during Phase 1
+
+* **BPM analysis was wrong on real material.** Three separate faults, each found by testing
+  against generated tracks with a known tempo:
+  * the energy envelope was measured over a window as short as the hop, so it tracked the
+    *waveform* of the bass rather than the loudness of the mix — a 128 BPM track read 117.6;
+  * with a strong bass line present it read 146 instead of 128, because sustained low
+    frequencies carry energy but no timing. The envelope is now high-passed at 200 Hz;
+  * the winning lag was rounded to an integer, and 128 BPM is a lag of 93.75 envelope samples.
+    The peak is now interpolated.
+  The autocorrelation is also normalised by both windows' energy, and confidence is now peak
+  prominence — 0.96–1.00 for a clear beat against below 0.05 for white noise, where the old
+  measure gave 0.6–0.7 for both.
+* **Pausing never faded out.** The "stopping" flag was being read as "still playing" when the
+  channel gain target was computed, so the gain was held up and the fade never completed.
+  Found by a PlayMode test asserting the voice stops only *after* the ramp.
+* **The playhead could end a block outside the track.** Reverse playback past the start left a
+  slightly negative position. The read index was guarded per frame but the final increment was
+  not.
+* **The library list rendered empty.** Rows were positioned before their anchors were set, and
+  the viewport used a `Mask` driven by a near-transparent graphic. Now anchored first and
+  clipped with `RectMask2D`.
+* Jog wheels and knobs drew as squares: uGUI `Image` needs a sprite to be anything else. Circle
+  and rounded-rectangle sprites are now generated at startup rather than committed as PNGs.
+
 ### Added — Phase 0: foundation (2026-09-18)
 
 * Unity 6000.3.23f1 project at `AIDeckUnity/`, configured for macOS and iPadOS with

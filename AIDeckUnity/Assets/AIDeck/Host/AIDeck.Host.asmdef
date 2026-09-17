@@ -1,0 +1,20 @@
+{
+    "name": "AIDeck.Host",
+    "rootNamespace": "AIDeck.Host",
+    "references": [
+        "AIDeck.Core",
+        "AIDeck.Platform",
+        "AIDeck.Audio",
+        "AIDeck.UI",
+        "UnityEngine.UI"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,20 @@
+{
+    "name": "AIDeck.App",
+    "rootNamespace": "AIDeck.App",
+    "references": [
+        "AIDeck.Core",
+        "AIDeck.Platform",
+        "AIDeck.Audio",
+        "AIDeck.UI",
+        "AIDeck.Host"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
