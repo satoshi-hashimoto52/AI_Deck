@@ -135,8 +135,19 @@ releases whatever it was holding, instead of leaving a fader stuck.
 
 ### 4.5 `AIDeck.Host` / `AIDeck.Controller`
 
-The two application shells: screen construction, wiring, and the command router that turns
-a decoded message into a call on `DeckModel` or `MixerState`.
+The two application shells.
+
+The host owns `AudioEngine`, `TrackLibrary` and the Mac window, and routes every intent —
+whether it came from the Mac UI or from the network — through one `HostCommands`, so a rule
+added there applies to both surfaces without being written twice.
+
+The controller is written against `IControllerBackend` rather than against a socket. That
+interface is what the network session implements in Phase 3, and what `LocalHostBackend`
+implements to bind the controller UI straight to an in-process host. The second one is how the
+iPad layout and every control are verified before there is an iPad to verify them on, and it
+is the shape the §10.2 integration tests use with the network put back in. The controller
+still only sends intents and renders what the host reports, so the discipline is identical
+either way.
 
 ## 5. Threading
 

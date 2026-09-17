@@ -1,13 +1,11 @@
 {
-    "name": "AIDeck.App",
-    "rootNamespace": "AIDeck.App",
+    "name": "AIDeck.Controller",
+    "rootNamespace": "AIDeck.Controller",
     "references": [
         "AIDeck.Core",
         "AIDeck.Platform",
-        "AIDeck.Audio",
         "AIDeck.UI",
-        "AIDeck.Host",
-        "AIDeck.Controller"
+        "UnityEngine.UI"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

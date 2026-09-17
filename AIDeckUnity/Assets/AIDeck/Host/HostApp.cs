@@ -41,6 +41,9 @@ namespace AIDeck.Host
         private readonly string[] _deckWaveformTrack = { string.Empty, string.Empty };
 
         public TrackLibrary Library => _library;
+
+        /// <summary>The Mac window. Exposed so an in-process controller can hide it.</summary>
+        public HostScreen Screen => _screen;
         public AudioEngine Engine => _engine;
         public HostCommands Commands => _commands;
         public DiagnosticLog Log => _log;

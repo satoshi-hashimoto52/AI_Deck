@@ -14,7 +14,7 @@ of "done" can be checked rather than taken on trust.
 | `todo` | Not implemented yet. |
 | `manual` | Correct behaviour can only be confirmed on hardware or by ear. |
 
-Status as of **Phase 1 complete** (2026-09-18). Paths are relative to
+Status as of **Phase 2 complete** (2026-09-18). Paths are relative to
 `AIDeckUnity/Assets/`.
 
 ## 6.1 Track library
@@ -71,7 +71,7 @@ Status as of **Phase 1 complete** (2026-09-18). Paths are relative to
 | ID | Requirement | Implementation | Test | Status |
 | --- | --- | --- | --- | --- |
 | FR-050 | Record the master output | `MasterBus` tap, `WavRecorder`, `RecorderPump` | `RecordingTests`, `AudioEnginePlayModeTests` | done |
-| FR-051 | Show recording state on both ends | `MixerPanelView`, `StateSnapshot.IsRecording` | `StateSnapshotTests`; shown in the Mac app | partial — iPad side in Phase 2 |
+| FR-051 | Show recording state on both ends | `MixerPanelView`, `ControllerScreen` status strip | `StateSnapshotTests`, `ControllerPlayModeTests` | done |
 | FR-052 | Show elapsed recording time | `WavRecorder.ElapsedSeconds` | `RecordingTests.ElapsedTime…` | done |
 | FR-053 | Save as WAV | `WavHeader`, `WavRecorder` | `RecordingTests` | done |
 | FR-054 | Show destination and file name | `WavRecorder.OutputPath`, Mac status line | `RecordingTests` | done |
@@ -81,9 +81,9 @@ Status as of **Phase 1 complete** (2026-09-18). Paths are relative to
 
 | ID | Requirement | Implementation | Test | Status |
 | --- | --- | --- | --- | --- |
-| FR-060 | Discover the host on the LAN | `DiscoveryPayload`, `AIDeck/Net` | `StateSnapshotTests.DiscoveryPayload…` | partial — sockets in Phase 3 |
-| FR-061 | Connect by IP address | `AppSettings.LastHostAddress` | `AppSettingsTests` | partial |
-| FR-062 | Show connection state | `AIDeck/Net` session | PlayMode | todo |
+| FR-060 | Discover the host on the LAN | `DiscoveryPayload`, `ConnectPanel` host list | `StateSnapshotTests` | partial — sockets in Phase 3 |
+| FR-061 | Connect by IP address | `ConnectPanel`, `AppSettings.LastHostAddress` | `ControllerPlayModeTests.ConnectingFromTheSheet…` | done (UI); sockets in Phase 3 |
+| FR-062 | Show connection state | `ConnectionState`, `ControllerScreen.SetConnectionState` | `ControllerPlayModeTests.TheConnectSheetIsHidden…` | done |
 | FR-063 | Controller actions reach the host | command router | PlayMode | todo |
 | FR-064 | Host state reaches the controller | `StateSnapshot` | `StateSnapshotTests` | done (payload) |
 | FR-065 | Reconnect after a brief outage | heartbeat | PlayMode | todo |
@@ -95,13 +95,13 @@ Status as of **Phase 1 complete** (2026-09-18). Paths are relative to
 
 | ID | Requirement | Implementation | Test | Status |
 | --- | --- | --- | --- | --- |
-| FR-070 | Landscape layout holds | `AIDeck/Controller` | manual | todo |
-| FR-071 | Multi-touch | `AIDeck/UI` touch router | PlayMode + manual | todo |
+| FR-070 | Landscape layout holds | `ControllerScreen`, landscape-only player settings | verified at 1133×744; device check in Phase 5 | done (simulated) |
+| FR-071 | Multi-touch | `TouchRouter`, `TouchWidget` capture rule | `TouchRouterTests.TwoWidgetsAreOperatedSimultaneously` | done |
 | FR-072 | Jog wheel | `PlatterMotion.Nudge` | `PlatterMotionTests.Nudge…` | done (logic) |
-| FR-073 | Touch cancel releases the control | `PlatterMotion.Cancel` | `PlatterMotionTests.Cancel…` | done (logic) |
-| FR-074 | Backgrounding releases held controls | `AIDeck/Controller` lifecycle | PlayMode | todo |
-| FR-075 | Important controls inside the safe area | `docs/mockups/`, `AIDeck/Controller` | manual | todo |
-| FR-076 | Suppress auto-sleep while playing | `AppBootstrap` sets `Screen.sleepTimeout` | `AppSettingsTests` | partial — tied to the user setting in Phase 2 |
+| FR-073 | Touch cancel releases the control | `TouchRouter`, `TouchWidget.OnCancelled` | `TouchRouterTests.ACancelledPointerReleases…` | done |
+| FR-074 | Backgrounding releases held controls | `ControllerApp.OnApplicationPause`, `TouchRouter.CancelAll` | `ControllerPlayModeTests.BackgroundingReleases…` | done |
+| FR-075 | Important controls inside the safe area | `UiFactory.ApplySafeArea` on the content root, re-applied on rotation | manual on device, Phase 5 | done (code); device check pending |
+| FR-076 | Suppress auto-sleep while playing | `ControllerApp.ApplySleepPolicy`, tied to `PreventSleepWhilePlaying` | `AppSettingsTests` | done |
 
 ## 6.7 Settings
 

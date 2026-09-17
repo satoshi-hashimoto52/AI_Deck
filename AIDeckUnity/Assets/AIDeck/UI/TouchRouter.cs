@@ -132,6 +132,26 @@ namespace AIDeck.UI
             }
         }
 
+        /// <summary>
+        /// Delivers a pointer-down. Public because the router is deliberately independent of
+        /// where pointers come from: <see cref="Update"/> feeds it from <c>Input</c>, and the
+        /// PlayMode tests feed it directly, which is the only way to test simultaneous
+        /// multi-touch (FR-071) and cancellation (FR-073) without a touchscreen.
+        /// </summary>
+        public void PointerDown(int id, Vector2 position) => Begin(id, position);
+
+        /// <summary>Delivers a pointer move.</summary>
+        public void PointerMove(int id, Vector2 position) => Move(id, position);
+
+        /// <summary>Delivers a pointer release.</summary>
+        public void PointerUp(int id, Vector2 position) => End(id, position);
+
+        /// <summary>Delivers a pointer cancellation (FR-073).</summary>
+        public void PointerCancel(int id) => Cancel(id);
+
+        /// <summary>True when this pointer currently holds a widget.</summary>
+        public bool IsCaptured(int pointerId) => _captured.ContainsKey(pointerId);
+
         private void Begin(int id, Vector2 position)
         {
             if (_captured.ContainsKey(id))

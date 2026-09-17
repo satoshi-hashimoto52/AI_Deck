@@ -8,6 +8,7 @@
         "AIDeck.Platform",
         "AIDeck.Audio",
         "AIDeck.UI",
+        "AIDeck.Controller",
         "AIDeck.Host",
         "AIDeck.App",
         "UnityEngine.UI"

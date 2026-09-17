@@ -1,3 +1,4 @@
+using AIDeck.Controller;
 using AIDeck.Host;
 using UnityEngine;
 
@@ -22,11 +23,14 @@ namespace AIDeck.App
             // this against the user setting once it knows what is playing.
             Screen.sleepTimeout = SleepTimeout.NeverSleep;
 
-            var role = AppRoleResolver.Resolve();
-            switch (role)
+            Role = AppRoleResolver.Resolve();
+            switch (Role)
             {
                 case AppRole.Controller:
                     StartController();
+                    break;
+                case AppRole.ControllerLocal:
+                    StartControllerAgainstLocalHost();
                     break;
                 default:
                     StartHost();
@@ -34,19 +38,44 @@ namespace AIDeck.App
             }
         }
 
-        private void StartHost()
+        /// <summary>The role this process started in.</summary>
+        public AppRole Role { get; private set; }
+
+        public HostApp Host { get; private set; }
+
+        public ControllerApp ControllerUi { get; private set; }
+
+        private HostApp StartHost()
         {
             var host = new GameObject("AI Deck Host");
             host.transform.SetParent(transform, false);
-            host.AddComponent<HostApp>();
+            Host = host.AddComponent<HostApp>();
+            return Host;
         }
 
         private void StartController()
         {
-            // The controller application lands in Phase 2. Until then, a device that would run
-            // it starts the host so the build is never a blank screen, and says so.
-            Debug.Log("[AI Deck] Controller role requested; the controller UI arrives in Phase 2.");
-            StartHost();
+            var controller = new GameObject("AI Deck Controller");
+            controller.transform.SetParent(transform, false);
+            ControllerUi = controller.AddComponent<ControllerApp>();
+
+            // The network session lands in Phase 3. Until then the controller comes up on its
+            // connection sheet and says plainly that it cannot connect yet, rather than
+            // pretending to be a host or showing a blank screen.
+            ControllerUi.Initialise(new DisconnectedBackend(
+                "The network link arrives in Phase 3, so this build cannot reach a Mac yet."));
+        }
+
+        private void StartControllerAgainstLocalHost()
+        {
+            var host = StartHost();
+            var controller = new GameObject("AI Deck Controller");
+            controller.transform.SetParent(transform, false);
+            ControllerUi = controller.AddComponent<ControllerApp>();
+            ControllerUi.Initialise(new LocalHostBackend(host), host.Log, host.Settings);
+
+            // Both would otherwise draw their canvases over each other.
+            host.Screen.SetVisible(false);
         }
 
         /// <summary>Creates the bootstrap object. Used by the scene and by the PlayMode tests.</summary>

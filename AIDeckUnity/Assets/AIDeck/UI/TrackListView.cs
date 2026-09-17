@@ -236,6 +236,13 @@ namespace AIDeck.UI
             row.Meta = UiFactory.CreateText("Meta", rootRect, string.Empty,
                 Theme.FontSizeLabel, TextAnchor.UpperLeft, Theme.TextDim);
 
+            // Clip rather than overflow: an over-long line would otherwise run underneath the
+            // load buttons and look like a rendering fault.
+            row.Meta.horizontalOverflow = HorizontalWrapMode.Wrap;
+            row.Meta.verticalOverflow = VerticalWrapMode.Truncate;
+            row.Title.horizontalOverflow = HorizontalWrapMode.Wrap;
+            row.Title.verticalOverflow = VerticalWrapMode.Truncate;
+
             // A transparent hit area behind the labels turns the whole row into a tap target.
             // It sits at a lower priority than the load buttons, which overlap it.
             row.Hit = rootRect.gameObject.AddComponent<RowHitArea>();
@@ -322,10 +329,17 @@ namespace AIDeck.UI
 
             row.Title.text = track.Title;
 
+            // Built from whatever is actually known. Padding the line with "Unknown" costs
+            // space that the duration and format need, and tells the user nothing.
             var bpm = track.HasBpm
                 ? track.Bpm.ToString("0.0", CultureInfo.InvariantCulture) + " BPM"
                 : "— BPM";
-            row.Meta.text = $"{track.Artist} · {bpm} · {track.DurationDisplay} · {FormatName(track.Format)}";
+            var artist = string.Equals(track.Artist, TrackInfo.UnknownArtist, StringComparison.Ordinal)
+                ? null
+                : track.Artist;
+            row.Meta.text = artist == null
+                ? $"{bpm} · {track.DurationDisplay} · {FormatName(track.Format)}"
+                : $"{artist} · {bpm} · {track.DurationDisplay} · {FormatName(track.Format)}";
 
             ApplyRowTint(row);
         }

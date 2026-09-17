@@ -232,6 +232,14 @@ namespace AIDeck.Host
 
         public void ClearPathField() => _pathField.text = string.Empty;
 
+        /// <summary>
+        /// Hides the Mac window without stopping the host.
+        ///
+        /// Used when a controller runs against an in-process host on one machine: both would
+        /// otherwise draw their canvases on top of each other.
+        /// </summary>
+        public void SetVisible(bool visible) => gameObject.SetActive(visible);
+
         public void SetPathField(string path) => _pathField.text = path ?? string.Empty;
 
         /// <summary>Greys the remove button out when nothing is selected.</summary>

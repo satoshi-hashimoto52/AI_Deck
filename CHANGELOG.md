@@ -8,6 +8,41 @@ Requirement IDs refer to
 
 ## [Unreleased]
 
+### Added — Phase 2: iPad controller (2026-09-18)
+
+* `AIDeck.Controller`: the landscape control surface of §5.1–§5.5, composing the same
+  `BrowserView`, `DeckPanelView` and `MixerPanelView` the Mac window uses so the two surfaces
+  cannot drift apart. Deck B is laid out as a mirror image, as §5.5 requires.
+* `IControllerBackend`: the controller is written against an interface rather than a socket.
+  The network session implements it in Phase 3; `LocalHostBackend` implements it by binding
+  the controller UI straight to an in-process host, which is how the iPad layout and every
+  control are verified before there is an iPad — and is the shape the §10.2 integration tests
+  will take with the network put back in.
+* `ConnectPanel`: the connection sheet (FR-060, FR-061, FR-062). It covers the control surface
+  whenever there is no link, because operating a DJ control connected to nothing is worse than
+  being told you cannot. Manual address entry is offered from the start rather than hidden,
+  since discovery fails on any network with client isolation.
+* Safe-area inset applied to the content root and re-applied on rotation (FR-075), so every
+  control is clear of the corners and the home indicator without each widget knowing about them.
+* Backgrounding and focus loss release every held control and the host's continuous state
+  (FR-074), and losing the link does the same (FR-066).
+* Auto-sleep is suppressed only while a deck is actually playing, subject to the user setting
+  (FR-076).
+* `TouchRouter` now takes pointers through a public API rather than only from `Input`, which
+  makes simultaneous multi-touch and cancellation testable without a touchscreen.
+* `-aideck-role controller` and `-aideck-role controller-local`.
+* Tests: PlayMode 34 passing (was 13), including a check that every primary deck control meets
+  the 44 pt minimum of §5.1.
+
+### Fixed during Phase 2
+
+* Library rows ran their metadata underneath the load buttons; the line is now built from what
+  is actually known (no "Unknown" filler) and clips instead of overflowing.
+* The master meter sat against the mixer panel's bottom edge and was clipped. The master block
+  is now ordered meter, label, fader, so the meter is never the element pushed off the edge.
+* The connect sheet had a fixed height, leaving a hole in the middle when discovery had found
+  nothing. It is now sized to its contents.
+
 ### Added — Phase 1: Mac-only DJ (2026-09-18)
 
 * **Own playback engine.** `DeckVoice` resamples from decoded PCM at a signed, per-sample

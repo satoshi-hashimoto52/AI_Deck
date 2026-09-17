@@ -10,7 +10,14 @@ namespace AIDeck.App
         Host,
 
         /// <summary>iPad: the control surface.</summary>
-        Controller
+        Controller,
+
+        /// <summary>
+        /// Both halves in one process: a host with its window hidden, driven by the controller
+        /// UI. The development and verification path for the iPad layout, and the shape the
+        /// integration tests use. See <c>docs/TEST_PLAN.md</c>.
+        /// </summary>
+        ControllerLocal
     }
 
     /// <summary>
@@ -67,6 +74,11 @@ namespace AIDeck.App
                 if (string.Equals(value, "controller", StringComparison.OrdinalIgnoreCase))
                 {
                     return AppRole.Controller;
+                }
+
+                if (string.Equals(value, "controller-local", StringComparison.OrdinalIgnoreCase))
+                {
+                    return AppRole.ControllerLocal;
                 }
             }
 

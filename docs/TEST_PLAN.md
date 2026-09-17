@@ -88,6 +88,22 @@ the §9 fade rules and the NFR-009 limiting checkable rather than merely asserte
 deck alone, ejecting, the pause fade, `AllStop`, the default disconnect policy, a recording
 failure not disturbing playback, and shutdown leaving nothing playing.
 
+`TouchRouterTests` and `ControllerPlayModeTests` cover the control surface. The router is fed
+pointers directly rather than through `Input`, which is the only way to test simultaneous
+multi-touch (FR-071) and cancellation (FR-073) without a touchscreen:
+
+| Behaviour | Test |
+| --- | --- |
+| Two controls driven at once, independently | `TwoWidgetsAreOperatedSimultaneously` |
+| A grabbed control keeps its finger when it leaves the rectangle | `AWidgetKeepsItsFinger…` |
+| A second finger on one control is ignored | `ASecondFingerOnTheSameWidget…` |
+| A cancelled pointer releases without firing the command | `ACancelledPointerReleases…` |
+| Backgrounding releases every held control | `BackgroundingReleasesHeldControls` |
+| Overlapping rectangles resolve by priority | `HigherPriorityWinsWhenRectanglesOverlap` |
+| Every primary deck control is at least 44 pt | `EveryTouchTargetMeetsTheMinimumSize` |
+| The connect sheet appears whenever there is no link | `TheConnectSheetIsHiddenOnlyWhileConnected` |
+| A typed address, with or without a port, is used and remembered | `ConnectingFromTheSheet…`, `AnAddressWithAPortIsParsed` |
+
 The fixture generates its own WAV with the shipping `WavRecorder` rather than committing a
 binary test asset, so every load test is also an end-to-end check that what AI Deck writes,
 AI Deck can read.
@@ -117,8 +133,24 @@ inspection. They are part of the product, documented here because this is where 
 | `-aideck-autoload` | Load the first two library tracks onto decks A and B |
 | `-aideck-autoplay` | As above, then start both decks |
 
-`-aideck-role host\|controller` (from `AppRoleResolver`) overrides the platform default and is
-how a controller is run against a host on one Mac for the §10.2 integration tests.
+`-aideck-role` overrides the platform default:
+
+| Value | Effect |
+| --- | --- |
+| `host` | The Mac window |
+| `controller` | The iPad control surface, which will connect over the network |
+| `controller-local` | The control surface bound straight to a host in the same process |
+
+`controller-local` is how the iPad layout is verified without an iPad — it drives the real
+screen, the real command router and the real audio engine, with the network replaced by a
+method call. Run it at the device's point size to see what the iPad will show:
+
+```bash
+"build/mac/AI Deck.app/Contents/MacOS/AI Deck" \
+    -aideck-role controller-local \
+    -aideck-import "~/Music/AI Deck" -aideck-autoplay \
+    -screen-width 1133 -screen-height 744 -screen-fullscreen 0
+```
 
 ### Phase 1 verification performed this way
 
@@ -133,6 +165,19 @@ Run on the built app with three generated files, one per supported container:
 | Duplicate detection on re-import | "Added 0 tracks, skipped 3. This file is already in the library." |
 | End of track stops the deck | yes, with a notice |
 | No exceptions in the player log | none |
+
+### Phase 2 verification performed this way
+
+| Check | Result |
+| --- | --- |
+| Controller layout at iPad mini size (1133×744) | 40 / 60 split holds; deck A, mixer, deck B all legible |
+| Deck B mirrored | yes — badge, state and tempo reading reflected |
+| Library, waveforms and meters render from host state | yes |
+| Connect sheet when not connected | shown, sized to its contents, manual entry always available |
+| No exceptions in the player log | none |
+
+The safe-area inset cannot be exercised on a Mac, where the safe area is the whole window.
+That one is confirmed on the device in Phase 5.
 
 ## 6. Manual tests (§10.3)
 

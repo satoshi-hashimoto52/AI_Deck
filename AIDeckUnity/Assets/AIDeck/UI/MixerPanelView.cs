@@ -150,7 +150,8 @@ namespace AIDeck.UI
             // Channel faders with their meters. This block takes whatever height is left over
             // after the fixed rows below, so the faders get the longest throw the panel allows.
             //   cue/mute row + crossfader + master label + master fader row + meter
-            var bottomBlock = Theme.TouchSize + 6f + 40f + 8f + 14f + 30f + 14f + pad;
+            //   cue/mute + crossfader + master meter + master label + master row
+            var bottomBlock = Theme.TouchSize + 6f + 40f + 8f + 6f + 6f + 14f + 30f + pad;
             var faderHeight = Mathf.Max(70f, height - y - bottomBlock);
             var faderWidth = 34f;
             var meterWidth = 8f;
@@ -178,11 +179,15 @@ namespace AIDeck.UI
             UiFactory.Place(_crossfaderB.rectTransform, pad + innerWidth - 20f, y, 14f, 40f);
             y += 40f + 8f;
 
-            // Master: its own label line, then the fader beside the record button, then the
-            // master meter underneath. Cramming all three onto one row left the fader a few
-            // pixels wide and overlapping its own label.
-            UiFactory.Place(_masterLabel.rectTransform, pad, y, innerWidth * 0.62f, 14f);
-            UiFactory.Place(_recordLabel.rectTransform, pad + innerWidth * 0.62f, y, innerWidth * 0.38f, 14f);
+            // Master, top to bottom: the output meter, then the label line, then the fader
+            // beside the record button. The meter goes above the controls rather than below so
+            // it is never the element pushed against the panel edge, and so a clipping
+            // indicator sits in the middle of the panel where it is hard to miss.
+            UiFactory.Place(_masterMeter.GetComponent<RectTransform>(), pad, y, innerWidth, 6f);
+            y += 6f + 6f;
+
+            UiFactory.Place(_masterLabel.rectTransform, pad, y, innerWidth * 0.55f, 14f);
+            UiFactory.Place(_recordLabel.rectTransform, pad + innerWidth * 0.55f, y, innerWidth * 0.45f, 14f);
             _recordLabel.alignment = TextAnchor.MiddleRight;
             y += 14f;
 
@@ -190,9 +195,6 @@ namespace AIDeck.UI
             var masterWidth = innerWidth - recordWidth - gap;
             UiFactory.Place(_master.Rect, pad, y + 6f, masterWidth, 18f);
             UiFactory.Place(_record.Rect, pad + masterWidth + gap, y, recordWidth, 30f);
-            y += 30f + 4f;
-
-            UiFactory.Place(_masterMeter.GetComponent<RectTransform>(), pad, y, masterWidth, 5f);
         }
 
         /// <summary>Renders the host's mixer state.</summary>
