@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AI Deck Controller Mockup</title>
+<style>
+  /* ------------------------------------------------------------------
+     AI Deck — iPad mini controller design reference (landscape only).
+
+     This file is the design basis named in §5 of the master issue. It is a
+     static, non-interactive reference: colours, proportions, touch-target
+     sizes and labels here are what the Unity controller UI implements.
+     Nothing in this page is loaded by the app at runtime.
+     ------------------------------------------------------------------ */
+
+  :root {
+    --bg:            #08090d;
+    --panel:         #12141c;
+    --panel-2:       #191c26;
+    --line:          #262b39;
+    --text:          #e8ecf4;
+    --text-dim:      #8b93a7;
+
+    --deck-a:        #22d3ee;   /* DECK A — cyan family (§5.1) */
+    --deck-a-soft:   rgba(34, 211, 238, 0.16);
+    --deck-b:        #f472b6;   /* DECK B — pink family (§5.1) */
+    --deck-b-soft:   rgba(244, 114, 182, 0.16);
+
+    --ok:            #34d399;
+    --warn:          #fbbf24;
+    --danger:        #f87171;
+
+    --radius:        10px;
+    --gap:           8px;
+
+    /* 44 pt minimum touch target (§5.1). */
+    --touch:         44px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  /* Safe area insets (§5.1, FR-075). */
+  #app {
+    position: absolute;
+    inset: 0;
+    padding: max(10px, env(safe-area-inset-top))
+             max(14px, env(safe-area-inset-right))
+             max(10px, env(safe-area-inset-bottom))
+             max(14px, env(safe-area-inset-left));
+    display: grid;
+    grid-template-rows: 40fr 60fr;   /* §5.1: 40 % browse, 60 % control */
+    gap: var(--gap);
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+
+  /* ================================ TOP: browse + waveform (§5.2) ========= */
+
+  #top {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: var(--gap);
+    min-height: 0;
+  }
+
+  #library { display: flex; flex-direction: column; min-height: 0; }
+
+  .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .head h2 {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .search {
+    margin: 8px 10px;
+    height: 34px;
+    border-radius: 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+
+  .tracks { flex: 1; overflow: hidden; padding: 0 6px 6px; }
+
+  .track {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    grid-template-areas: "title  a b" "meta meta meta";
+    gap: 3px 6px;
+    align-items: center;
+    padding: 7px 8px;
+    border-radius: 8px;
+  }
+  .track + .track { margin-top: 2px; }
+  .track.on-a { background: var(--deck-a-soft); }
+  .track.on-b { background: var(--deck-b-soft); }
+
+  .track .t  { grid-area: title; font-weight: 600; font-size: 13px; }
+  .track .m  { grid-area: meta;  font-size: 11px; color: var(--text-dim); }
+
+  /* Deck load buttons: 44 pt minimum (§5.1). */
+  .load {
+    width: var(--touch);
+    height: var(--touch);
+    border-radius: 9px;
+    display: grid;
+    place-items: center;
+    font-weight: 700;
+    font-size: 15px;
+    border: 1px solid var(--line);
+    background: var(--panel-2);
+  }
+  .load.a { grid-area: a; color: var(--deck-a); border-color: rgba(34,211,238,.45); }
+  .load.b { grid-area: b; color: var(--deck-b); border-color: rgba(244,114,182,.45); }
+
+  /* ---- waveform column ---- */
+
+  #waves { display: flex; flex-direction: column; min-height: 0; }
+
+  #status {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 7px 12px;
+    border-bottom: 1px solid var(--line);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  #status .spacer { flex: 1; }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 5px; }
+  .dot.ok      { background: var(--ok); }
+  .dot.warn    { background: var(--warn); }
+  .dot.rec     { background: var(--danger); }
+
+  .waverow {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    padding: 8px 12px;
+    min-height: 0;
+  }
+
+  .wavemeta {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .wavemeta .name { font-size: 12px; font-weight: 600; color: var(--text); }
+  .wavemeta .grow { flex: 1; }
+
+  .wave {
+    position: relative;
+    flex: 1;
+    min-height: 34px;
+    border-radius: 6px;
+    background: var(--panel-2);
+    overflow: hidden;
+  }
+  .wave .bars { position: absolute; inset: 0; display: flex; align-items: center; gap: 1px; padding: 0 1px; }
+  .wave .bars i { flex: 1; border-radius: 1px; }
+  .wave.a .bars i { background: var(--deck-a); opacity: .55; }
+  .wave.b .bars i { background: var(--deck-b); opacity: .55; }
+
+  /* Playhead marker (§5.2). */
+  .wave .cursor {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 2px;
+    background: #fff;
+    box-shadow: 0 0 6px rgba(255,255,255,.65);
+  }
+
+  /* =============================== BOTTOM: deck / mixer / deck (§5.3–5.5) == */
+
+  #bottom {
+    display: grid;
+    grid-template-columns: 1fr 224px 1fr;
+    gap: var(--gap);
+    min-height: 0;
+  }
+
+  .deck {
+    display: grid;
+    grid-template-columns: 1fr 150px;
+    grid-template-rows: auto 1fr;
+    gap: 8px;
+    padding: 9px;
+    min-height: 0;
+  }
+  .deck.a { border-color: rgba(34,211,238,.32); }
+  .deck.b { border-color: rgba(244,114,182,.32); }
+  .deck.b { direction: rtl; }          /* §5.5: mirrored layout */
+  .deck.b > * { direction: ltr; }
+
+  .deckhead {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .badge {
+    width: 26px; height: 26px;
+    border-radius: 7px;
+    display: grid; place-items: center;
+    font-weight: 800; font-size: 13px;
+    color: #06121a;
+  }
+  .deck.a .badge { background: var(--deck-a); }
+  .deck.b .badge { background: var(--deck-b); }
+  .bpm { margin-left: auto; font-variant-numeric: tabular-nums; font-size: 12px; color: var(--text); }
+
+  /* ---- jog wheel (§5.3) ---- */
+  .jogwrap { display: grid; place-items: center; min-height: 0; }
+  .jog {
+    aspect-ratio: 1;
+    width: min(100%, 100%);
+    max-height: 100%;
+    border-radius: 50%;
+    position: relative;
+    background: radial-gradient(circle at 50% 42%, #232735 0%, #14161e 62%, #0d0f15 100%);
+    border: 2px solid var(--line);
+  }
+  .deck.a .jog { border-color: rgba(34,211,238,.5); }
+  .deck.b .jog { border-color: rgba(244,114,182,.5); }
+  .jog::after {
+    content: "";
+    position: absolute;
+    inset: 22%;
+    border-radius: 50%;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+  }
+  /* Rotation index mark, so platter movement is visible. */
+  .jog .mark {
+    position: absolute;
+    left: 50%; top: 6%;
+    width: 4px; height: 20%;
+    margin-left: -2px;
+    border-radius: 2px;
+  }
+  .deck.a .jog .mark { background: var(--deck-a); }
+  .deck.b .jog .mark { background: var(--deck-b); }
+
+  /* ---- deck buttons + tempo ---- */
+  .deckctl {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: repeat(4, minmax(var(--touch), 1fr));
+    gap: 6px;
+    min-height: 0;
+  }
+
+  .btn {
+    min-height: var(--touch);
+    border-radius: 9px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    color: var(--text);
+  }
+  .btn.wide { grid-column: 1 / -1; }
+  .btn.play.on   { background: var(--ok);     color: #04150e; border-color: var(--ok); }
+  .btn.on.a      { background: var(--deck-a); color: #05141a; border-color: var(--deck-a); }
+  .btn.on.b      { background: var(--deck-b); color: #1a0713; border-color: var(--deck-b); }
+  .btn.held      { background: #2c3242; border-color: #46506a; }   /* pressed */
+  .btn.disabled  { opacity: .32; }                                  /* unavailable */
+  .btn.waiting   { border-color: var(--warn); color: var(--warn); } /* awaiting host */
+  .btn.error     { border-color: var(--danger); color: var(--danger); }
+
+  .tempo {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 8px;
+  }
+  .slider {
+    height: 12px;
+    border-radius: 6px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    position: relative;
+  }
+  .slider .knob {
+    position: absolute;
+    top: 50%;
+    width: 30px; height: 26px;      /* wide enough to grab reliably */
+    margin-top: -13px; margin-left: -15px;
+    border-radius: 6px;
+    background: #39405a;
+    border: 1px solid #5a648a;
+  }
+  .slider .detent { position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--line); }
+  .tempo .val { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--text-dim); min-width: 46px; text-align: right; }
+
+  /* ---- mixer (§5.4) ---- */
+  #mixer {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 9px;
+    min-height: 0;
+  }
+
+  .mixrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; min-height: 0; }
+  .mixrow.faders { flex: 1; }
+
+  .channel { display: flex; flex-direction: column; align-items: center; gap: 5px; min-height: 0; }
+  .chlabel { font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+  .channel.a .chlabel { color: var(--deck-a); }
+  .channel.b .chlabel { color: var(--deck-b); }
+
+  .vfader {
+    flex: 1;
+    width: 34px;                 /* wide throw, easy to hit */
+    min-height: 60px;
+    border-radius: 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    position: relative;
+  }
+  .vfader .knob {
+    position: absolute;
+    left: 50%;
+    width: 40px; height: 22px;
+    margin-left: -20px; margin-top: -11px;
+    border-radius: 5px;
+    background: #39405a;
+    border: 1px solid #5a648a;
+  }
+
+  .meter {
+    width: 7px;
+    border-radius: 4px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    position: relative;
+    overflow: hidden;
+  }
+  .meter i { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(to top, var(--ok), var(--warn) 78%, var(--danger)); }
+
+  .knobrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .knobcell { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .rotary {
+    width: var(--touch); height: var(--touch);
+    border-radius: 50%;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    position: relative;
+  }
+  .channel.a .rotary { border-color: rgba(34,211,238,.45); }
+  .channel.b .rotary { border-color: rgba(244,114,182,.45); }
+  .rotary .ptr { position: absolute; left: 50%; top: 4px; width: 3px; height: 13px; margin-left: -1.5px; border-radius: 2px; background: var(--text); transform-origin: 50% 18px; }
+  .caption { font-size: 9px; letter-spacing: .07em; color: var(--text-dim); }
+
+  .xfwrap { display: flex; flex-direction: column; gap: 4px; }
+  .xf {
+    height: 40px;
+    border-radius: 9px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    position: relative;
+  }
+  .xf .knob {
+    position: absolute;
+    top: 50%;
+    width: 34px; height: 46px;
+    margin-top: -23px; margin-left: -17px;
+    border-radius: 7px;
+    background: #39405a;
+    border: 1px solid #5a648a;
+  }
+  .xf .end { position: absolute; top: 50%; transform: translateY(-50%); font-size: 10px; font-weight: 700; color: var(--text-dim); }
+  .xf .end.l { left: 7px; } .xf .end.r { right: 7px; }
+
+  .masterrow { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+  .master { font-size: 10px; color: var(--text-dim); }
+  .master b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+  .smallbtns { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .sbtn {
+    min-height: var(--touch);
+    border-radius: 8px;
+    background: var(--panel-2);
+    border: 1px solid var(--line);
+    display: grid; place-items: center;
+    font-size: 10px; font-weight: 700; letter-spacing: .05em;
+  }
+  .sbtn.on.a { background: var(--deck-a); color: #05141a; }
+  .sbtn.on.b { background: var(--deck-b); color: #1a0713; }
+  .sbtn.on.rec { background: var(--danger); color: #1a0505; }
+
+  .legend {
+    position: absolute;
+    right: 16px; bottom: 6px;
+    font-size: 9px;
+    color: #4b5265;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ==================== TOP 40 %: browse + waveform (§5.2) ============ -->
+  <div id="top">
+
+    <section class="panel" id="library">
+      <div class="head">
+        <h2>Library</h2>
+        <span style="font-size:11px;color:var(--text-dim)">42 tracks</span>
+      </div>
+      <div class="search">Search title, artist or file…</div>
+      <div class="tracks">
+        <div class="track on-a">
+          <span class="t">Neon Drive</span>
+          <span class="m">Synth Engine · 128.0 BPM · 3:34 · MP3</span>
+          <span class="load a">A</span><span class="load b">B</span>
+        </div>
+        <div class="track on-b">
+          <span class="t">Midnight Rail</span>
+          <span class="m">Synth Engine · 126.0 BPM · 4:02 · WAV</span>
+          <span class="load a">A</span><span class="load b">B</span>
+        </div>
+        <div class="track">
+          <span class="t">Harbour Lights</span>
+          <span class="m">Ambient Engine · — BPM · 5:18 · AIFF</span>
+          <span class="load a">A</span><span class="load b">B</span>
+        </div>
+        <div class="track">
+          <span class="t">Static Bloom</span>
+          <span class="m">Synth Engine · 174.0 BPM · 3:01 · MP3</span>
+          <span class="load a">A</span><span class="load b">B</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="waves">
+      <div id="status">
+        <span><span class="dot ok"></span>Connected · 192.168.1.42</span>
+        <span><span class="dot rec"></span>REC 01:23</span>
+        <span class="spacer"></span>
+        <span>Master −6.0 dB</span>
+      </div>
+
+      <div class="waverow">
+        <div class="wavemeta">
+          <span style="color:var(--deck-a);font-weight:700">A</span>
+          <span class="name">Neon Drive</span>
+          <span class="grow"></span>
+          <span>1:12 elapsed</span><span>−2:22 remaining</span>
+        </div>
+        <div class="wave a"><div class="bars" id="wa"></div><div class="cursor" style="left:34%"></div></div>
+
+        <div class="wavemeta">
+          <span style="color:var(--deck-b);font-weight:700">B</span>
+          <span class="name">Midnight Rail</span>
+          <span class="grow"></span>
+          <span>0:41 elapsed</span><span>−3:21 remaining</span>
+        </div>
+        <div class="wave b"><div class="bars" id="wb"></div><div class="cursor" style="left:17%"></div></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============== BOTTOM 60 %: DECK A | MIXER | DECK B (§5.3–5.5) ===== -->
+  <div id="bottom">
+
+    <!-- ---------------- DECK A ---------------- -->
+    <section class="panel deck a">
+      <div class="deckhead">
+        <span class="badge">A</span>
+        <span>PLAYING</span>
+        <span class="bpm">128.0 BPM · +0.0 %</span>
+      </div>
+
+      <div class="jogwrap">
+        <div class="jog"><div class="mark"></div></div>
+      </div>
+
+      <div class="deckctl">
+        <div class="btn play on wide">PLAY / PAUSE</div>
+        <div class="btn on a">CUE</div>
+        <div class="btn">SYNC</div>
+        <div class="btn on a">LOOP 4</div>
+        <div class="btn held">ECHO</div>
+        <div class="btn">BRAKE</div>
+        <div class="btn">BACKSPIN</div>
+        <div class="tempo">
+          <div class="slider"><div class="detent"></div><div class="knob" style="left:50%"></div></div>
+          <span class="val">+0.0 %</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------------- MIXER ---------------- -->
+    <section class="panel" id="mixer">
+      <div class="mixrow knobrow">
+        <div class="knobcell">
+          <div class="rotary" style="border-color:rgba(34,211,238,.45)"><div class="ptr" style="transform:rotate(-38deg)"></div></div>
+          <span class="caption">FILTER A</span>
+        </div>
+        <div class="knobcell">
+          <div class="rotary" style="border-color:rgba(244,114,182,.45)"><div class="ptr" style="transform:rotate(0deg)"></div></div>
+          <span class="caption">FILTER B</span>
+        </div>
+      </div>
+
+      <div class="mixrow faders">
+        <div class="channel a">
+          <span class="chlabel">CH A</span>
+          <div style="display:flex;gap:6px;flex:1;min-height:0">
+            <div class="vfader"><div class="knob" style="top:24%"></div></div>
+            <div class="meter"><i style="height:62%"></i></div>
+          </div>
+        </div>
+        <div class="channel b">
+          <span class="chlabel">CH B</span>
+          <div style="display:flex;gap:6px;flex:1;min-height:0">
+            <div class="vfader"><div class="knob" style="top:40%"></div></div>
+            <div class="meter"><i style="height:38%"></i></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="smallbtns">
+        <div class="sbtn on a">CUE A</div>
+        <div class="sbtn">MUTE A</div>
+        <div class="sbtn">MUTE B</div>
+        <div class="sbtn">CUE B</div>
+      </div>
+
+      <div class="xfwrap">
+        <div class="xf">
+          <span class="end l">A</span><span class="end r">B</span>
+          <div class="knob" style="left:44%"></div>
+        </div>
+        <div class="masterrow">
+          <span class="master">MASTER <b>−6.0 dB</b> · peak <b>0.82</b></span>
+          <div class="sbtn on rec" style="min-width:76px">● REC</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------------- DECK B ---------------- -->
+    <section class="panel deck b">
+      <div class="deckhead">
+        <span class="badge">B</span>
+        <span>PAUSED</span>
+        <span class="bpm">126.0 BPM · −1.6 %</span>
+      </div>
+
+      <div class="jogwrap">
+        <div class="jog"><div class="mark" style="transform:rotate(126deg);transform-origin:50% 250%"></div></div>
+      </div>
+
+      <div class="deckctl">
+        <div class="btn play wide">PLAY / PAUSE</div>
+        <div class="btn">CUE</div>
+        <div class="btn on b">SYNC</div>
+        <div class="btn">LOOP 4</div>
+        <div class="btn">ECHO</div>
+        <div class="btn">BRAKE</div>
+        <div class="btn disabled">BACKSPIN</div>
+        <div class="tempo">
+          <div class="slider"><div class="detent"></div><div class="knob" style="left:42%"></div></div>
+          <span class="val">−1.6 %</span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <span class="legend">AI Deck V1 — static design reference, not the running app</span>
+</div>
+
+<script>
+  /* The bars are generated rather than hand-written so the reference shows a
+     realistic envelope. No interaction: this page documents layout only. */
+  function fill(id, seed) {
+    var host = document.getElementById(id);
+    var html = '';
+    var s = seed;
+    for (var i = 0; i < 150; i++) {
+      s = (s * 1103515245 + 12345) & 0x7fffffff;
+      var base = 0.30 + 0.55 * Math.abs(Math.sin(i / 9));
+      var jitter = ((s / 0x7fffffff) - 0.5) * 0.35;
+      var h = Math.max(6, Math.min(100, (base + jitter) * 100));
+      html += '<i style="height:' + h.toFixed(0) + '%"></i>';
+    }
+    host.innerHTML = html;
+  }
+  fill('wa', 12345);
+  fill('wb', 98765);
+</script>
+</body>
+</html>
