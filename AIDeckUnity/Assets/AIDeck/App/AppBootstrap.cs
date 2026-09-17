@@ -45,6 +45,12 @@ namespace AIDeck.App
 
         public ControllerApp ControllerUi { get; private set; }
 
+        private NetworkBackend _networkBackend;
+
+        private void OnDestroy() => _networkBackend?.Dispose();
+
+        private void OnApplicationQuit() => _networkBackend?.Dispose();
+
         private HostApp StartHost()
         {
             var host = new GameObject("AI Deck Host");
@@ -59,11 +65,17 @@ namespace AIDeck.App
             controller.transform.SetParent(transform, false);
             ControllerUi = controller.AddComponent<ControllerApp>();
 
-            // The network session lands in Phase 3. Until then the controller comes up on its
-            // connection sheet and says plainly that it cannot connect yet, rather than
-            // pretending to be a host or showing a blank screen.
-            ControllerUi.Initialise(new DisconnectedBackend(
-                "The network link arrives in Phase 3, so this build cannot reach a Mac yet."));
+            _networkBackend = new NetworkBackend();
+            ControllerUi.Initialise(_networkBackend);
+
+            // If the address from the last session is still valid, reconnect without making the
+            // user type it again (FR-080). Discovery runs in parallel, so a Mac that has moved
+            // still appears in the list.
+            var settings = ControllerUi.Settings;
+            if (!settings.LastHostAddress.Equals(string.Empty, System.StringComparison.Ordinal))
+            {
+                _networkBackend.Connect(settings.LastHostAddress, settings.LastHostPort);
+            }
         }
 
         private void StartControllerAgainstLocalHost()

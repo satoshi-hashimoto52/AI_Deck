@@ -120,7 +120,29 @@ supported.
 compressed formats. 16-bit WAV is universally readable and keeps the writer simple enough to
 be provably correct under interruption.
 
-### 2.7 A recording interrupted by a crash loses up to 5 seconds
+### 2.7 Automatic connection only when the choice is unambiguous
+
+The controller connects to a discovered host by itself only when exactly one is being heard
+and the user has not chosen one this session. With two Macs on the network it lists them and
+waits, because guessing which one the DJ meant would be worse than asking.
+
+A stored address is tried first and given three seconds to answer before a discovered host is
+tried instead.
+
+### 2.8 Discovery depends on UDP broadcast
+
+The beacon is a UDP broadcast to each interface's directed broadcast address. It needs no
+service registration and no extra entitlement, and on a home or studio network it reaches
+every device — but a network with client isolation (guest Wi-Fi, some mesh systems) blocks it
+outright. Nothing else would work there either, which is why manual address entry sits beside
+discovery rather than behind it.
+
+Both platforms also refuse LAN access until the local network permission is granted, and they
+do so *silently* — discovery simply finds nothing. The build adds
+`NSLocalNetworkUsageDescription` so the prompt appears; if it was declined, re-enable it in
+system settings.
+
+### 2.9 A recording interrupted by a crash loses up to 5 seconds
 
 The header's size fields are refreshed every 5 seconds, so a file recovered after a crash is
 valid up to the last refresh. Audio written after it is present in the file but not declared

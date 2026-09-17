@@ -77,12 +77,19 @@ the §9 fade rules and the NFR-009 limiting checkable rather than merely asserte
 
 | §10.2 item | Fixture | Status |
 | --- | --- | --- |
-| Simulated controller connects to the host in-process | `HostSessionPlayModeTests` | Phase 3 |
-| Simulated controller drives a deck | `HostSessionPlayModeTests` | Phase 3 |
-| Host state reaches the simulated controller | `HostSessionPlayModeTests` | Phase 3 |
-| Disconnect and reconnect | `HostSessionPlayModeTests` | Phase 3 |
-| High-rate fader input does not grow the queue | `OutboundQueueTests` (EditMode) + `HostSessionPlayModeTests` | EditMode done, wiring Phase 3 |
+| A controller connects to the host in-process | `NetworkIntegrationTests.AControllerConnectsToTheHost` | **done** |
+| The controller drives a deck | `NetworkIntegrationTests.TheControllerDrivesADeck` | **done** |
+| Host state reaches the controller | `NetworkIntegrationTests.HostStateReachesTheController` | **done** |
+| Disconnect and reconnect | `NetworkIntegrationTests.DisconnectingAndReconnectingSucceeds` | **done** |
+| High-rate fader input does not grow the queue | `NetworkIntegrationTests.HighRateFaderInputDoesNotGrowTheQueue` | **done** |
 | Two decks playing while recording | `AudioEnginePlayModeTests.TwoDecksPlayTogetherAndRecordToAWavFile` | **done** |
+
+`NetworkIntegrationTests` runs both ends in one process over **real sockets on loopback**, not
+over a mocked transport. The things most likely to be wrong here — framing across reads, the
+handshake, the heartbeat, who is allowed to send on the fast channel — are exactly the things
+a mock would define away. It also covers a command reaching the audio engine, a second
+controller being refused with an explanation, connecting to nothing failing with a reason
+rather than hanging, and the disconnect policy releasing the platter and stopping playback.
 
 `AudioEnginePlayModeTests` also covers loading a real file, a failing load leaving the other
 deck alone, ejecting, the pause fade, `AllStop`, the default disconnect policy, a recording
@@ -178,6 +185,31 @@ Run on the built app with three generated files, one per supported container:
 
 The safe-area inset cannot be exercised on a Mac, where the safe area is the whole window.
 That one is confirmed on the device in Phase 5.
+
+### Phase 3 verification performed this way
+
+Two copies of the built app, on one Mac, over the real network interface — not loopback:
+
+```bash
+"build/mac/AI Deck.app/Contents/MacOS/AI Deck" -aideck-role host \
+    -aideck-import "~/Music/AI Deck" -aideck-autoplay &
+"build/mac/AI Deck.app/Contents/MacOS/AI Deck" -aideck-role controller \
+    -screen-width 1133 -screen-height 744 -screen-fullscreen 0 &
+```
+
+| Check | Result |
+| --- | --- |
+| The controller finds the Mac by broadcast (FR-060) | Host listed by name and address |
+| It connects without being told an address | Auto-connected to the single discovered host |
+| Both ends agree on the connection state (FR-062) | "Connected to …" on the controller, "… connected." on the Mac |
+| The library streams across | 3 tracks with correct BPM, duration and format |
+| The state snapshot renders (FR-064) | Deck titles, positions, transport state, tempo, mixer |
+| Waveforms stream across and render | Both decks |
+| No exceptions in either player log | none |
+
+A stale stored address is worth noting: the first run tried a leftover address, reported "The
+Mac did not answer", and then switched to the discovered host on its own. That path is the
+reason the auto-connect rule exists.
 
 ## 6. Manual tests (§10.3)
 

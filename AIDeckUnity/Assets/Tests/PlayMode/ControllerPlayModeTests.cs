@@ -7,6 +7,7 @@ using AIDeck.Core.Mixer;
 using AIDeck.Core.Model;
 using AIDeck.Core.Net;
 using AIDeck.Core.Settings;
+using AIDeck.Platform;
 using AIDeck.UI;
 using NUnit.Framework;
 using UnityEngine;
@@ -78,6 +79,7 @@ namespace AIDeck.Tests.PlayMode
         private GameObject _root;
         private ControllerApp _app;
         private StubBackend _backend;
+        private string _settingsPath;
 
         [SetUp]
         public void SetUp()
@@ -85,7 +87,13 @@ namespace AIDeck.Tests.PlayMode
             _backend = new StubBackend();
             _root = new GameObject("ControllerTestHost");
             _app = _root.AddComponent<ControllerApp>();
-            _app.Initialise(_backend, null, new AppSettings());
+
+            // A temporary settings file: the tests must not write a host address into the real
+            // one, or the installed app would start trying to reach a machine that never existed.
+            _settingsPath = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(), "aideck-test-settings-" + System.Guid.NewGuid().ToString("N") + ".json");
+
+            _app.Initialise(_backend, null, new AppSettings(), new SettingsStore(null, _settingsPath));
         }
 
         [TearDown]
@@ -94,6 +102,18 @@ namespace AIDeck.Tests.PlayMode
             if (_root != null)
             {
                 Object.DestroyImmediate(_root);
+            }
+
+            try
+            {
+                if (System.IO.File.Exists(_settingsPath))
+                {
+                    System.IO.File.Delete(_settingsPath);
+                }
+            }
+            catch (System.Exception)
+            {
+                // A leftover file in the temp folder is harmless.
             }
         }
 

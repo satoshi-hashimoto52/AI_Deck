@@ -14,7 +14,7 @@ of "done" can be checked rather than taken on trust.
 | `todo` | Not implemented yet. |
 | `manual` | Correct behaviour can only be confirmed on hardware or by ear. |
 
-Status as of **Phase 2 complete** (2026-09-18). Paths are relative to
+Status as of **Phase 3 complete** (2026-09-18). Paths are relative to
 `AIDeckUnity/Assets/`.
 
 ## 6.1 Track library
@@ -44,14 +44,14 @@ Status as of **Phase 2 complete** (2026-09-18). Paths are relative to
 | FR-024 | Set and return to CUE | `CuePoint`, `DeckModel.CueReturn` | `CuePointTests`, `DeckModelTests` | done |
 | FR-025 | Seek | `DeckModel.Seek` | `DeckModelTests.Seek…` | done |
 | FR-026 | Elapsed and remaining time | `DeckSnapshot.RemainingSeconds`, `TrackInfo.FormatDuration` | `DeckModelTests`, `TrackInfoTests` | done |
-| FR-027 | Build, cache and show the waveform | `WaveformBuilder`, `WaveformCache`, `WaveformView` | `AnalysisTests`; rendered in the Mac app | done |
+| FR-027 | Build, cache and show the waveform | `WaveformBuilder`, `WaveformCache`, chunked over the wire, `WaveformView` | `AnalysisTests`, `StateSnapshotTests`; rendered on both ends | done |
 | FR-028 | Change tempo | `TempoControl` | `TempoControlTests` | done |
 | FR-029 | Simple BPM analysis | `BpmAnalyzer` | `AnalysisTests` | done |
 | FR-030 | SYNC | `TempoControl.EnableSync` | `TempoControlTests.EnableSync…` | done |
 | FR-031 | Loop a region | `LoopRegion`, `DeckModel` | `LoopRegionTests`, `DeckModelTests` | done |
-| FR-032 | Simple scratch | `PlatterMotion`, `DeckVoice` signed rate | `PlatterMotionTests`, `DeckVoiceTests` | done (host); controller gesture in Phase 2 |
-| FR-033 | BRAKE | `PlatterMotion.StartBrake` | `PlatterMotionTests`, `DeckModelTests` | done (host) |
-| FR-034 | BACKSPIN | `PlatterMotion.StartBackspin`, `DeckVoice` reverse | `PlatterMotionTests`, `DeckVoiceTests` | done (host) |
+| FR-032 | Simple scratch | `PlatterMotion`, `DeckVoice` signed rate, `JogWidget` gesture | `PlatterMotionTests`, `DeckVoiceTests` | done |
+| FR-033 | BRAKE | `PlatterMotion.StartBrake` | `PlatterMotionTests`, `DeckModelTests` | done |
+| FR-034 | BACKSPIN | `PlatterMotion.StartBackspin`, `DeckVoice` reverse | `PlatterMotionTests`, `DeckVoiceTests` | done |
 
 ## 6.3 Mixer and effects
 
@@ -81,15 +81,15 @@ Status as of **Phase 2 complete** (2026-09-18). Paths are relative to
 
 | ID | Requirement | Implementation | Test | Status |
 | --- | --- | --- | --- | --- |
-| FR-060 | Discover the host on the LAN | `DiscoveryPayload`, `ConnectPanel` host list | `StateSnapshotTests` | partial — sockets in Phase 3 |
-| FR-061 | Connect by IP address | `ConnectPanel`, `AppSettings.LastHostAddress` | `ControllerPlayModeTests.ConnectingFromTheSheet…` | done (UI); sockets in Phase 3 |
-| FR-062 | Show connection state | `ConnectionState`, `ControllerScreen.SetConnectionState` | `ControllerPlayModeTests.TheConnectSheetIsHidden…` | done |
-| FR-063 | Controller actions reach the host | command router | PlayMode | todo |
-| FR-064 | Host state reaches the controller | `StateSnapshot` | `StateSnapshotTests` | done (payload) |
-| FR-065 | Reconnect after a brief outage | heartbeat | PlayMode | todo |
-| FR-066 | Release continuous controls on disconnect | `DeckModel.ReleaseContinuousControls`, `AudioEngine.AllStop` | `DeckModelTests`, `AudioEnginePlayModeTests.AllStop…` | done (host); wiring in Phase 3 |
-| FR-067 | Ignore stale sequence numbers | `SequenceGate` | `SequenceGateTests` | done |
-| FR-068 | Reject an incompatible protocol version | `MessageCodec`, `ProtocolInfo` | `MessageCodecTests.IncompatibleVersion…` | done |
+| FR-060 | Discover the host on the LAN | `DiscoveryBroadcaster` / `DiscoveryListener`, directed broadcast per interface | verified between two processes on a real LAN | done |
+| FR-061 | Connect by IP address | `ConnectPanel`, `ControllerSession.Connect` | `ControllerPlayModeTests`, `NetworkIntegrationTests` | done |
+| FR-062 | Show connection state | `HostSession.StatusText`, `ControllerSession.StatusText`, both screens | `ControllerPlayModeTests`, `NetworkIntegrationTests` | done |
+| FR-063 | Controller actions reach the host | `HostNetworkBridge` routes into the same `HostCommands` the Mac UI uses | `NetworkIntegrationTests.ACommandFromTheControllerReachesTheAudioEngine` | done |
+| FR-064 | Host state reaches the controller | `HostSession.TickSnapshot` at 20 Hz, `NetworkBackend` | `NetworkIntegrationTests.HostStateReachesTheController` | done |
+| FR-065 | Reconnect after a brief outage | heartbeat plus `ControllerSession` retry every 2 s | `NetworkIntegrationTests.DisconnectingAndReconnectingSucceeds` | done |
+| FR-066 | Release continuous controls on disconnect | `HostNetworkBridge` → `AudioEngine.ApplyDisconnectPolicy` | `NetworkIntegrationTests.LosingTheControllerAppliesTheDisconnectPolicy` | done |
+| FR-067 | Ignore stale sequence numbers | `SequenceGate` in `HostSession` and `ControllerSession` | `SequenceGateTests`, `NetworkIntegrationTests.HighRateFaderInput…` | done |
+| FR-068 | Reject an incompatible protocol version | `MessageCodec`, `FrameReader`, `TcpLink` closes with both versions named | `MessageCodecTests.IncompatibleVersion…` | done |
 
 ## 6.6 Controller interaction
 
@@ -119,14 +119,14 @@ Status as of **Phase 2 complete** (2026-09-18). Paths are relative to
 | --- | --- | --- | --- |
 | NFR-001 | Audio independent of UI load | one `OnAudioFilterRead`, no allocation or locks after `Prepare`; `AudioRingBuffer` is lock-free | partial — measured in Phase 4 |
 | NFR-002 | Never block the main thread | decode on coroutines, analysis on `ThreadPool`, disk on the recorder pump | done for Phase 1 paths |
-| NFR-003 | No perceptible control lag on a normal LAN | UDP fast channel, coalescing queue | manual |
-| NFR-004 | Bounded send queue | `OutboundQueue`, cap 512, fast messages coalesce | done |
+| NFR-003 | No perceptible control lag on a normal LAN | UDP fast channel, `TcpClient.NoDelay`, coalescing queue | measured in Phase 4; subjective check in Phase 5 |
+| NFR-004 | Bounded send queue | `OutboundQueue` in `TcpLink`, cap 512, fast messages coalesce; a full reliable backlog closes the link (covered by `OutboundQueueTests` and `NetworkIntegrationTests`) | done |
 | NFR-005 | 30 minutes without a crash, leak or dropout | no per-frame allocation on the audio path | manual — Phase 4 |
 | NFR-006 | No personal data in logs | `DiagnosticLog` truncation; file names only on the wire | done |
 | NFR-007 | Exceptions surfaced, not swallowed | `DiagnosticLog.Exception` separates user notice from diagnostics | done |
 | NFR-008 | Non-destructive handling of media | no write path to the source file | done |
 | NFR-009 | Gain limiting before output | `AudioSafety.SoftLimit` on the master bus | done |
-| NFR-010 | No audio after a disconnect or quit | `AudioEngine.Shutdown` clears both channels and detaches the output | `AudioEnginePlayModeTests.ShutdownLeavesNothingPlaying`; disconnect path in Phase 3 |
+| NFR-010 | No audio after a disconnect or quit | `AudioEngine.Shutdown`; the disconnect path fades out and stops by default (covered by `AudioEnginePlayModeTests` and `NetworkIntegrationTests`) | done |
 
 ## 9 Safety
 
@@ -134,7 +134,7 @@ Status as of **Phase 2 complete** (2026-09-18). Paths are relative to
 | --- | --- | --- |
 | Short fade on play, stop and load | 12 ms ramp in `DeckChannel`, 3 ms after a loop wrap; the transport waits for it (covered by `AudioChainTests` and `AudioEnginePlayModeTests`) | done |
 | No NaN / Infinity / out-of-range to audio | `AudioSafety`, sanitising setters everywhere | done |
-| Release continuous state on disconnect | `DeckModel.ReleaseContinuousControls`, `AudioEngine.AllStop` | done (host); wiring in Phase 3 |
+| Release continuous state on disconnect | `HostNetworkBridge` on the disconnect event, then the configured policy | done |
 | Configurable disconnect policy, safe default | `AppSettings.OnDisconnect` = `StopPlayback` | done |
 | Never modify the source file on error | no write path | done |
 | Recoverable partial recording | header sizes refreshed every 5 s | done |

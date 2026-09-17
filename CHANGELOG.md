@@ -8,6 +8,43 @@ Requirement IDs refer to
 
 ## [Unreleased]
 
+### Added — Phase 3: networking (2026-09-18)
+
+* `AIDeck.Net`: the transport described in `docs/NETWORK_PROTOCOL.md`.
+  * `FrameReader` turns a TCP byte stream into frames, resynchronising on the magic bytes
+    after damage rather than closing the connection, and consuming a frame with a bad version
+    or bad flags instead of wedging on it.
+  * `TcpLink` runs receive and send on their own threads and hands decoded frames to a queue
+    the main thread drains, so application state is only ever mutated on the main thread. It
+    sets `NoDelay`: a DJ command must not wait for Nagle to fill a segment.
+  * `UdpLink` carries the fast channel and sends inline — queueing a datagram behind a thread
+    would add the latency that channel exists to avoid.
+  * `DiscoveryBroadcaster` beacons to each interface's directed broadcast address, not only to
+    255.255.255.255, so a Mac on both Wi-Fi and Ethernet is found on either.
+  * `HostSession` and `ControllerSession`: handshake, heartbeat, snapshot broadcast, library
+    and waveform streaming, reconnection.
+* `HostNetworkBridge` routes every decoded command into the **same** `HostCommands` the Mac
+  window uses, so a rule added there applies identically to both surfaces. On losing the
+  controller it releases every continuous control and applies the disconnect policy, whose
+  default is the safe stop (§9, FR-066).
+* `NetworkBackend` implements the `IControllerBackend` the UI was written against in Phase 2,
+  so nothing in the controller screen changed when the network arrived. It assembles the
+  streamed library and waveform chunks, and asks for a waveform once rather than every frame.
+* The controller connects to a discovered host on its own when exactly one is being heard and
+  the user has not chosen one — step 4 of the issue's completion definition — and lists them
+  and waits when there is more than one.
+* Only the connected controller's address may send on the fast channel; without that check any
+  device on the LAN could move a crossfader.
+* A second controller is refused with an explanation before the connection closes.
+* Tests: PlayMode 45 passing (was 34), including all six §10.2 integration items run over real
+  sockets rather than a mocked transport.
+
+### Fixed during Phase 3
+
+* `ControllerPlayModeTests` wrote a host address into the real settings file, so the installed
+  app would start trying to reach a machine that never existed. The settings store is now
+  injectable and the tests use a temporary file.
+
 ### Added — Phase 2: iPad controller (2026-09-18)
 
 * `AIDeck.Controller`: the landscape control surface of §5.1–§5.5, composing the same

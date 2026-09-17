@@ -4,6 +4,7 @@
     "references": [
         "AIDeck.Core",
         "AIDeck.Platform",
+        "AIDeck.Net",
         "AIDeck.Audio",
         "AIDeck.UI",
         "UnityEngine.UI"

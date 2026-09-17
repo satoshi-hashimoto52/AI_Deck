@@ -40,10 +40,18 @@ namespace AIDeck.Controller
         /// Builds the controller. The backend is injected so that the same screen serves the
         /// network session, an in-process host, and the tests.
         /// </summary>
-        public void Initialise(IControllerBackend backend, DiagnosticLog log = null, AppSettings settings = null)
+        public void Initialise(
+            IControllerBackend backend,
+            DiagnosticLog log = null,
+            AppSettings settings = null,
+            SettingsStore settingsStore = null)
         {
             _log = log ?? new DiagnosticLog();
-            _settingsStore = new SettingsStore(_log);
+
+            // The store is injectable so the tests do not write into the real settings file.
+            // A test that remembers an address the user never typed would leave the app trying
+            // to reach a machine that does not exist.
+            _settingsStore = settingsStore ?? new SettingsStore(_log);
             _settings = settings ?? _settingsStore.Load();
             _backend = backend ?? new DisconnectedBackend();
 
@@ -59,6 +67,8 @@ namespace AIDeck.Controller
 
         private void OnConnectRequested(string address, int port)
         {
+            // An explicit choice switches off the automatic one for the rest of the session.
+            _userChoseHost = true;
             _settings.LastHostAddress = address;
             _settings.LastHostPort = port;
             _settingsStore.Save(_settings);
@@ -68,6 +78,10 @@ namespace AIDeck.Controller
 
         private void OnRetryRequested()
         {
+            // "Search again" also clears the manual choice, so discovery is free to take over.
+            _userChoseHost = false;
+            _attemptedAddress = string.Empty;
+            _sinceAttemptStarted = 0f;
             _backend.Disconnect();
             Render(force: true);
         }
@@ -89,7 +103,64 @@ namespace AIDeck.Controller
 
             _refreshTimer = 0f;
             Render(force: false);
+            TickAutoConnect(RefreshInterval);
         }
+
+        private bool _userChoseHost;
+        private float _sinceAttemptStarted;
+        private string _attemptedAddress = string.Empty;
+
+        /// <summary>
+        /// Connects to a discovered host when the stored address is not answering.
+        ///
+        /// Step 4 of the issue's completion definition is "the iPad finds the Mac and
+        /// connects", so discovery should not merely list a host and wait to be tapped. But it
+        /// only acts when the choice is unambiguous: exactly one host is being heard, the user
+        /// has not picked one themselves this session, and the address currently being tried
+        /// has already failed to answer. With two Macs on the network, guessing which one the
+        /// DJ meant would be worse than asking.
+        /// </summary>
+        private void TickAutoConnect(float deltaSeconds)
+        {
+            if (_backend == null || _userChoseHost || _backend.State == ConnectionState.Connected)
+            {
+                _sinceAttemptStarted = 0f;
+                return;
+            }
+
+            var hosts = _backend.DiscoveredHosts;
+            if (hosts == null || hosts.Count != 1)
+            {
+                return;
+            }
+
+            var host = hosts[0];
+            if (!host.IsValid || host.Address == _attemptedAddress)
+            {
+                return;
+            }
+
+            _sinceAttemptStarted += deltaSeconds;
+            if (_sinceAttemptStarted < AutoConnectDelaySeconds)
+            {
+                return;
+            }
+
+            _sinceAttemptStarted = 0f;
+            _attemptedAddress = host.Address;
+            _settings.LastHostAddress = host.Address;
+            _settings.LastHostPort = host.Port;
+            _settingsStore.Save(_settings);
+            _backend.Connect(host);
+            _log.Info("Controller", "Connecting to the Mac found on this network.");
+            Render(force: true);
+        }
+
+        /// <summary>
+        /// How long a stored address is given to answer before a discovered host is tried
+        /// instead. Long enough that a Mac which is simply slow to accept is not abandoned.
+        /// </summary>
+        private const float AutoConnectDelaySeconds = 3f;
 
         private void Render(bool force)
         {

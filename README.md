@@ -120,7 +120,7 @@ UNITY=/Applications/Unity/Hub/Editor/6000.3.23f1/Unity.app/Contents/MacOS/Unity
          -testResults /tmp/editmode-results.xml -logFile /tmp/editmode.log
 ```
 
-Exit code 0 means everything passed. **326 EditMode and 34 PlayMode tests** pass today. See
+Exit code 0 means everything passed. **326 EditMode and 45 PlayMode tests** pass today. See
 [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md), which also documents how to bring the built Mac app
 up in a known state — including running the iPad control surface against a host in the same
 process, which is how the controller layout is checked without an iPad.
@@ -131,8 +131,8 @@ process, which is how the controller layout is checked without an iPad.
 | --- | --- | --- |
 | 0 | Project, assemblies, core domain, test harness, design docs | **complete** |
 | 1 | Mac-only DJ: library, two decks, waveform, mixer, effects, recording, Mac UI | **complete** — Mac app builds and runs |
-| 2 | iPad controller UI | **complete** — 34 PlayMode tests passing, layout verified at iPad mini size |
-| 3 | Networking | not started |
+| 2 | iPad controller UI | **complete** — layout verified at iPad mini size |
+| 3 | Networking: discovery, connection, control, state sync, reconnection | **complete** — 45 PlayMode tests passing, verified between two processes on a real LAN |
 | 4 | Builds and quality | not started |
 | 5 | Device verification | not started |
 

@@ -33,6 +33,7 @@ namespace AIDeck.Host
         private TrackImporter _importer;
         private HostScreen _screen;
         private HostCommands _commands;
+        private HostNetworkBridge _bridge;
 
         private float _refreshTimer;
         private int _renderedRevision = -1;
@@ -49,8 +50,12 @@ namespace AIDeck.Host
         public DiagnosticLog Log => _log;
         public AppSettings Settings => _settings;
 
-        /// <summary>The connection status the network layer reports. Shown in the status line (FR-062).</summary>
-        public string ConnectionStatus { get; set; } = "Waiting for a controller";
+        /// <summary>The network endpoint, or null when networking could not start.</summary>
+        public HostNetworkBridge Bridge => _bridge;
+
+        /// <summary>The connection status shown in the status line (FR-062).</summary>
+        public string ConnectionStatus =>
+            _bridge != null ? _bridge.StatusText : "Networking is not running";
 
         private void Awake()
         {
@@ -89,7 +94,11 @@ namespace AIDeck.Host
             _screen.RemoveSelectedRequested += RemoveSelectedTrack;
             _screen.SetRemoveEnabled(false);
 
-            _screen.SetAddress(DeviceInfo.LocalIPv4(), ProtocolInfo.DefaultTcpPort);
+            _bridge = gameObject.AddComponent<HostNetworkBridge>();
+            _bridge.Notice += ShowNotice;
+            _bridge.Initialise(_engine, _commands, _library, _settings, _log);
+
+            _screen.SetAddress(DeviceInfo.LocalIPv4(), _bridge.Session?.TcpPort ?? ProtocolInfo.DefaultTcpPort);
             _screen.SetPathField(MusicFolderScanner.DefaultMusicFolder);
 
             _library.Changed += OnLibraryChanged;
@@ -245,7 +254,7 @@ namespace AIDeck.Host
                 $"{ConnectionStatus}  ·  {(_library.Count == 1 ? "1 track" : _library.Count + " tracks")}{recording}",
                 snapshot.IsRecording ? Theme.Danger : Theme.TextDim);
 
-            _screen.SetAddress(address, ProtocolInfo.DefaultTcpPort);
+            _screen.SetAddress(address, _bridge?.Session?.TcpPort ?? ProtocolInfo.DefaultTcpPort);
         }
 
         /// <summary>
