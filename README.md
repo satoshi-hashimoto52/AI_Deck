@@ -122,10 +122,19 @@ UNITY=/Applications/Unity/Hub/Editor/6000.3.23f1/Unity.app/Contents/MacOS/Unity
          -testResults /tmp/editmode-results.xml -logFile /tmp/editmode.log
 ```
 
-Exit code 0 means everything passed. **326 EditMode and 45 PlayMode tests** pass today. See
-[`docs/TEST_PLAN.md`](docs/TEST_PLAN.md), which also documents how to bring the built Mac app
-up in a known state — including running the iPad control surface against a host in the same
-process, which is how the controller layout is checked without an iPad.
+Exit code 0 means everything passed. As of Phase 4:
+
+| Suite | Tests | Passed | Failed |
+| --- | --- | --- | --- |
+| EditMode | 332 | 332 | 0 |
+| PlayMode | 56 | 56 | 0 |
+| 30-minute soak (opt-in) | 1 | 1 | 0 |
+
+The soak is opt-in through `AIDECK_SOAK_MINUTES`; without it that one test reports *ignored*,
+never passed. See [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md), which has the commands for all
+three and also documents how to bring the built Mac app up in a known state — including
+running the iPad control surface against a host in the same process, which is how the
+controller layout is checked without an iPad.
 
 ## Progress
 
@@ -134,7 +143,7 @@ process, which is how the controller layout is checked without an iPad.
 | 0 | Project, assemblies, core domain, test harness, design docs | **complete** |
 | 1 | Mac-only DJ: library, two decks, waveform, mixer, effects, recording, Mac UI | **complete** — Mac app builds and runs |
 | 2 | iPad controller UI | **complete** — layout verified at iPad mini size |
-| 3 | Networking: discovery, connection, control, state sync, reconnection | **complete** — 45 PlayMode tests passing, verified between two processes on a real LAN |
+| 3 | Networking: discovery, connection, control, state sync, reconnection | **complete** — verified between two processes on a real LAN |
 | 4 | Builds and quality: iOS project compiles, NFR checks, 30-minute run | **complete** |
 | 5 | Device verification | **needs you** — see [What is left for you](#what-is-left-for-you) |
 
@@ -143,7 +152,7 @@ process, which is how the controller layout is checked without an iPad.
 Everything that can be automated is done. What remains needs an Apple ID, a physical iPad, or
 a pair of ears — none of which a build script has.
 
-1. **Sign the iPad app.** Open `build/ios/Unity-iPhone.xcodeproj`, pick your Team under
+1. **Sign the iPad app.** Open `AIDeckUnity/build/ios/Unity-iPhone.xcodeproj`, pick your Team under
    *Signing & Capabilities*. The project already builds without signing, so if Xcode complains
    at this point it is about your account, not about the project —
    [`docs/BUILD_IPAD.md`](docs/BUILD_IPAD.md) has the no-signing compile check that proves it.

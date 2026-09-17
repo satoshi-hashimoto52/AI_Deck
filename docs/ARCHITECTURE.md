@@ -64,7 +64,7 @@ maths, the crossfader curves, the wire codec, the WAV writer and the settings re
 The consequences are concrete:
 
 * every rule in §6 and §9 of the issue is testable in EditMode, with no audio device, no
-  scene and no frame loop — the 283 EditMode tests run in seconds;
+  scene and no frame loop — the 332 EditMode tests run in seconds;
 * the audio thread can call into Core without touching engine state, which is what makes
   `OnAudioFilterRead` safe to write;
 * the same code runs identically on the host and the controller.

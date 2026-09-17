@@ -151,7 +151,7 @@ The Mac host accepts three startup options so a build can be brought up in a kno
 inspection. They are part of the product, documented here because this is where they are used.
 
 ```bash
-"build/mac/AI Deck.app/Contents/MacOS/AI Deck" \
+"AIDeckUnity/build/mac/AI Deck.app/Contents/MacOS/AI Deck" \
     -aideck-import "~/Music/AI Deck" \
     -aideck-autoplay
 ```
@@ -175,7 +175,7 @@ screen, the real command router and the real audio engine, with the network repl
 method call. Run it at the device's point size to see what the iPad will show:
 
 ```bash
-"build/mac/AI Deck.app/Contents/MacOS/AI Deck" \
+"AIDeckUnity/build/mac/AI Deck.app/Contents/MacOS/AI Deck" \
     -aideck-role controller-local \
     -aideck-import "~/Music/AI Deck" -aideck-autoplay \
     -screen-width 1133 -screen-height 744 -screen-fullscreen 0
@@ -213,9 +213,9 @@ That one is confirmed on the device in Phase 5.
 Two copies of the built app, on one Mac, over the real network interface — not loopback:
 
 ```bash
-"build/mac/AI Deck.app/Contents/MacOS/AI Deck" -aideck-role host \
+"AIDeckUnity/build/mac/AI Deck.app/Contents/MacOS/AI Deck" -aideck-role host \
     -aideck-import "~/Music/AI Deck" -aideck-autoplay &
-"build/mac/AI Deck.app/Contents/MacOS/AI Deck" -aideck-role controller \
+"AIDeckUnity/build/mac/AI Deck.app/Contents/MacOS/AI Deck" -aideck-role controller \
     -screen-width 1133 -screen-height 744 -screen-fullscreen 0 &
 ```
 
@@ -234,6 +234,17 @@ Mac did not answer", and then switched to the discovered host on its own. That p
 reason the auto-connect rule exists.
 
 ### Phase 4 verification performed this way
+
+Suite totals at the end of Phase 4:
+
+| Suite | Tests | Passed | Failed |
+| --- | --- | --- | --- |
+| EditMode | 332 | 332 | 0 |
+| PlayMode | 56 | 56 | 0 |
+| 30-minute soak (opt-in) | 1 | 1 | 0 |
+
+Compiler warnings: 0. Not run: the on-device tests M1–M8 below, and the real-LAN latency
+figure for NFR-003.
 
 | Check | Result |
 | --- | --- |

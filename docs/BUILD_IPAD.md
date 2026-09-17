@@ -24,7 +24,12 @@ UNITY=/Applications/Unity/Hub/Editor/6000.3.23f1/Unity.app/Contents/MacOS/Unity
          -logFile /tmp/aideck-build-ios.log
 ```
 
-Output: `build/ios/Unity-iPhone.xcodeproj`.
+Output: `AIDeckUnity/build/ios/Unity-iPhone.xcodeproj`.
+
+Every command on this page is meant to be run from the **repository root**. The build script
+asks Unity for `build/ios`, and Unity resolves a relative build path against the *Unity project*
+folder rather than the working directory — so the project lands inside `AIDeckUnity/`, one level
+below where the command was run.
 
 Or from the editor: **AI Deck → Build → iOS (Xcode project)**.
 
@@ -33,7 +38,7 @@ Or from the editor: **AI Deck → Build → iOS (Xcode project)**.
 Worth doing once, because it separates "the project is wrong" from "my Team is wrong":
 
 ```bash
-cd build/ios
+cd AIDeckUnity/build/ios
 xcodebuild -project Unity-iPhone.xcodeproj -target Unity-iPhone \
            -configuration Release -sdk iphoneos \
            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
@@ -72,7 +77,7 @@ Verified in the generated project and the compiled app:
 
 These steps cannot be automated because they involve your Apple ID.
 
-1. Open `build/ios/Unity-iPhone.xcodeproj` in Xcode.
+1. Open `AIDeckUnity/build/ios/Unity-iPhone.xcodeproj` in Xcode.
 2. Select the **Unity-iPhone** target → **Signing & Capabilities**.
 3. Tick **Automatically manage signing**.
 4. Choose your **Team**. If none is listed, add your Apple ID in
@@ -108,6 +113,6 @@ These steps cannot be automated because they involve your Apple ID.
 
 ## Rebuilding
 
-Regenerating the Xcode project overwrites `build/ios/`, including the Team selection. Unity
+Regenerating the Xcode project overwrites `AIDeckUnity/build/ios/`, including the Team selection. Unity
 can append to an existing project instead, but the reliable path for a clean result is to
 regenerate and re-select the Team, which takes a few seconds.

@@ -20,7 +20,12 @@ UNITY=/Applications/Unity/Hub/Editor/6000.3.23f1/Unity.app/Contents/MacOS/Unity
          -logFile /tmp/aideck-build-mac.log
 ```
 
-Output: `build/mac/AI Deck.app`.
+Output: `AIDeckUnity/build/mac/AI Deck.app`.
+
+Every command on this page is meant to be run from the **repository root**. The build script
+asks Unity for `build/mac`, and Unity resolves a relative build path against the *Unity project*
+folder rather than the working directory — so the app lands inside `AIDeckUnity/`, one level
+below where the command was run.
 
 ## From the editor
 
@@ -68,7 +73,7 @@ The host accepts startup options for bringing it up in a known state — useful 
 and for the checks in [`TEST_PLAN.md`](TEST_PLAN.md):
 
 ```bash
-"build/mac/AI Deck.app/Contents/MacOS/AI Deck" \
+"AIDeckUnity/build/mac/AI Deck.app/Contents/MacOS/AI Deck" \
     -aideck-import "~/Music/AI Deck" -aideck-autoplay
 ```
 
@@ -84,7 +89,7 @@ open it once from the Finder context menu with **Open**.
 ## Clean build
 
 ```bash
-rm -rf AIDeckUnity/Library AIDeckUnity/Temp build/mac
+rm -rf AIDeckUnity/Library AIDeckUnity/Temp AIDeckUnity/build/mac
 ```
 
 Deleting `Library/` forces a full reimport, which takes several minutes.

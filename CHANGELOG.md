@@ -36,6 +36,9 @@ Requirement IDs refer to
   `AIDECK_SOAK_MINUTES` and reports *ignored* without it, never passed.
 * A latency measurement in the integration tests, reported as an explicit **floor** because
   both ends run on one machine; the real figure is measured with the iPad in Phase 5.
+* Tests at the end of Phase 4: **EditMode 332 passing, PlayMode 56 passing, 30-minute soak
+  1 passing**, 0 failures and 0 compiler warnings. The soak result against this state was
+  heap 19 MB → 19 MB (peak 21 MB) with 0.00 s of silence.
 * `docs/BUILD_MAC.md` and `docs/BUILD_IPAD.md` lost their "not yet verified" notices and gained
   the settings actually observed in the produced binaries.
 
