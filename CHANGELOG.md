@@ -8,6 +8,53 @@ Requirement IDs refer to
 
 ## [Unreleased]
 
+### Added — Phase 4: builds and quality (2026-09-18)
+
+* **Cue monitoring now does something.** The CUE buttons previously set a flag that changed
+  nothing audible. A cued deck is now summed into a cue bus taken **before** the channel fader,
+  the crossfader and MUTE — pre-fade listen, which is the whole point, since a DJ cues a track
+  in order to hear it while it is still faded out. With one output device the only possible
+  arrangement is split cue: left carries the cue, right carries the master. The mixer labels
+  that state `SPLIT CUE (L)`, and the recorder is fed the master before the split, so a
+  recording made while cueing contains the master only.
+* **Waveform scrubbing** (FR-025). The waveform scrolls past a fixed playhead, so dragging it
+  is the same gesture as moving a record under the needle. FR-025 previously had no control
+  behind it at all — only the model supported seeking.
+
+* **The iOS Xcode project now builds.** Generated from Unity and compiled with
+  `xcodebuild` against the iOS 26.5 SDK to an arm64 `AIDeck.app`, zero errors. Only signing
+  remains, which needs an Apple ID and a device. `docs/BUILD_IPAD.md` documents the
+  no-signing compile check, because it separates "the project is wrong" from "my Team is wrong".
+* `QualityPlayModeTests` covers the non-functional requirements that can only be shown by
+  running the thing: audio continuing through a 300 ms main-thread stall (NFR-001), frames
+  continuing through a decode (NFR-002), and — the most likely place for a path to leak — a
+  recording failure keeping the full path out of the log and out of the broadcast snapshot
+  (NFR-006).
+* `SoakTests`: the 30-minute continuous two-deck run of NFR-005, checking every 250 ms that the
+  audio thread is still producing, that neither deck has escaped its loop, that the master bus
+  has not gone silent, and that the managed heap has not grown. It is **opt-in** through
+  `AIDECK_SOAK_MINUTES` and reports *ignored* without it, never passed.
+* A latency measurement in the integration tests, reported as an explicit **floor** because
+  both ends run on one machine; the real figure is measured with the iPad in Phase 5.
+* `docs/BUILD_MAC.md` and `docs/BUILD_IPAD.md` lost their "not yet verified" notices and gained
+  the settings actually observed in the produced binaries.
+
+### Changed during Phase 4
+
+* **Heartbeats moved from the fast channel to the reliable one.** Liveness must not depend on
+  the lossy transport: on a network that drops UDP between clients — or behind a firewall that
+  blocks the controller's inbound datagrams — the session would have timed out every three
+  seconds and reconnected forever while the TCP connection was perfectly healthy. The split
+  also gives a useful diagnosis, so when heartbeats arrive but snapshots do not, the controller
+  says "Connected …, but not receiving updates" instead of silently showing state that stopped
+  changing.
+
+### Fixed during Phase 4
+
+* The soak test hit Unity Test Framework's undocumented 180-second per-test timeout and was
+  reported as a failure at three minutes. It now carries an explicit `Timeout`, and refuses a
+  requested duration that would not fit rather than running into the ceiling.
+
 ### Added — Phase 3: networking (2026-09-18)
 
 * `AIDeck.Net`: the transport described in `docs/NETWORK_PROTOCOL.md`.

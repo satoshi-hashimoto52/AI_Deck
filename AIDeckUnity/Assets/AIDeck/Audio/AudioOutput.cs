@@ -23,6 +23,9 @@ namespace AIDeck.Audio
         private MasterBus _master;
         private volatile bool _active;
 
+        /// <summary>Cue bus. Allocated once and reused; the audio thread never allocates.</summary>
+        private float[] _cueMix = System.Array.Empty<float>();
+
         /// <summary>Blocks rendered since the last reset. Used by the tests to confirm the graph is alive.</summary>
         private long _blocksRendered;
 
@@ -66,10 +69,20 @@ namespace AIDeck.Audio
 
             System.Array.Clear(data, 0, data.Length);
 
+            if (_cueMix.Length != data.Length)
+            {
+                // Only on a buffer-size change, which Unity does not do mid-session.
+                _cueMix = new float[data.Length];
+            }
+            else
+            {
+                System.Array.Clear(_cueMix, 0, _cueMix.Length);
+            }
+
             var sampleRate = master.SampleRate;
-            deckA.RenderInto(data, channels, sampleRate);
-            deckB.RenderInto(data, channels, sampleRate);
-            master.Process(data, channels);
+            deckA.RenderInto(data, _cueMix, channels, sampleRate);
+            deckB.RenderInto(data, _cueMix, channels, sampleRate);
+            master.Process(data, _cueMix, channels);
 
             System.Threading.Interlocked.Increment(ref _blocksRendered);
         }

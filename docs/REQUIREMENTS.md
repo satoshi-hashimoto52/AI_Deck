@@ -14,7 +14,7 @@ of "done" can be checked rather than taken on trust.
 | `todo` | Not implemented yet. |
 | `manual` | Correct behaviour can only be confirmed on hardware or by ear. |
 
-Status as of **Phase 3 complete** (2026-09-18). Paths are relative to
+Status as of **Phase 4 complete** (2026-09-18). Paths are relative to
 `AIDeckUnity/Assets/`.
 
 ## 6.1 Track library
@@ -42,7 +42,7 @@ Status as of **Phase 3 complete** (2026-09-18). Paths are relative to
 | FR-022 | Play both decks at once | `DeckChannel`, `MasterBus` | `AudioChainTests`, `AudioEnginePlayModeTests.TwoDecksPlayTogether…` | done |
 | FR-023 | Play / pause / return to start | `DeckStateMachine`, `DeckModel` | `DeckStateMachineTests`, `DeckModelTests` | done |
 | FR-024 | Set and return to CUE | `CuePoint`, `DeckModel.CueReturn` | `CuePointTests`, `DeckModelTests` | done |
-| FR-025 | Seek | `DeckModel.Seek` | `DeckModelTests.Seek…` | done |
+| FR-025 | Seek | `DeckModel.Seek`, `WaveformScrubber` needle-drop on both screens | `DeckModelTests`, `ControllerPlayModeTests.ScrubbingTheWaveform…` | done |
 | FR-026 | Elapsed and remaining time | `DeckSnapshot.RemainingSeconds`, `TrackInfo.FormatDuration` | `DeckModelTests`, `TrackInfoTests` | done |
 | FR-027 | Build, cache and show the waveform | `WaveformBuilder`, `WaveformCache`, chunked over the wire, `WaveformView` | `AnalysisTests`, `StateSnapshotTests`; rendered on both ends | done |
 | FR-028 | Change tempo | `TempoControl` | `TempoControlTests` | done |
@@ -62,7 +62,8 @@ Status as of **Phase 3 complete** (2026-09-18). Paths are relative to
 | FR-042 | Per-deck MUTE | `MixerState.SetMute` | `MixerTests.Mute…` | done |
 | FR-043 | Per-deck FILTER | `FilterParams`, `StateVariableFilter` | `EffectTests` | done |
 | FR-044 | Per-deck ECHO | `EchoProcessor` | `EffectTests` | done |
-| FR-045 | Clip detection | `LevelMeter` | `EffectTests.LevelMeter…` | done |
+| FR-045 | Clip detection | `LevelMeter` latches every clipped sample; shown on the master meter | `EffectTests`, `AudioChainTests` | done |
+| — | Cue monitoring (§5.4) | `DeckChannel` pre-fader cue send, `MasterBus` split cue | `AudioChainTests.CueIsTakenBeforeTheFader…`, `SplitCuePutsTheCueLeft…` | done — split cue, see KNOWN_LIMITATIONS §2.9 |
 | FR-046 | Master volume | `MixerState.MasterGain` | `MixerTests` | done |
 | FR-047 | No sudden loud noise under load | `AudioSafety.SoftLimit`, echo cap, gain ramps | `AudioSafetyTests`, `EffectTests` | done |
 
@@ -117,13 +118,13 @@ Status as of **Phase 3 complete** (2026-09-18). Paths are relative to
 
 | ID | Requirement | How it is met | Status |
 | --- | --- | --- | --- |
-| NFR-001 | Audio independent of UI load | one `OnAudioFilterRead`, no allocation or locks after `Prepare`; `AudioRingBuffer` is lock-free | partial — measured in Phase 4 |
-| NFR-002 | Never block the main thread | decode on coroutines, analysis on `ThreadPool`, disk on the recorder pump | done for Phase 1 paths |
-| NFR-003 | No perceptible control lag on a normal LAN | UDP fast channel, `TcpClient.NoDelay`, coalescing queue | measured in Phase 4; subjective check in Phase 5 |
+| NFR-001 | Audio independent of UI load | one `OnAudioFilterRead`, no allocation or locks after `Prepare`; `AudioRingBuffer` is lock-free. Shown by `QualityPlayModeTests.AudioKeepsRunningWhileTheMainThreadStalls`: the audio thread keeps producing through a 300 ms main-thread busy-wait | done |
+| NFR-002 | Never block the main thread | decode on coroutines, analysis on `ThreadPool`, disk on the recorder pump, connect attempts on a worker. `QualityPlayModeTests.LoadingDoesNotBlockTheMainThread` | done |
+| NFR-003 | No perceptible control lag on a normal LAN | UDP fast channel, `TcpClient.NoDelay`, coalescing queue. In-process floor measured at 0.1 ms average / 0.2 ms worst over 30 samples; the real-LAN figure needs the iPad | partial — measured on device in Phase 5 |
 | NFR-004 | Bounded send queue | `OutboundQueue` in `TcpLink`, cap 512, fast messages coalesce; a full reliable backlog closes the link (covered by `OutboundQueueTests` and `NetworkIntegrationTests`) | done |
-| NFR-005 | 30 minutes without a crash, leak or dropout | no per-frame allocation on the audio path | manual — Phase 4 |
-| NFR-006 | No personal data in logs | `DiagnosticLog` truncation; file names only on the wire | done |
-| NFR-007 | Exceptions surfaced, not swallowed | `DiagnosticLog.Exception` separates user notice from diagnostics | done |
+| NFR-005 | 30 minutes without a crash, leak or dropout | no per-frame allocation on the audio path. `SoakTests` ran 30 minutes of two-deck looping playback: heap 19 MB → 19 MB (peak 21 MB), longest silence 0.00 s | done (automated); on-device run in Phase 5 |
+| NFR-006 | No personal data in logs | `DiagnosticLog` truncation; file names only on the wire. `QualityPlayModeTests` checks the most likely leak — a recording failure — for both the log and the snapshot | done |
+| NFR-007 | Exceptions surfaced, not swallowed | `DiagnosticLog.Exception` separates user notice from diagnostics; `NetDiagnostics` turns socket errors into actionable sentences | done |
 | NFR-008 | Non-destructive handling of media | no write path to the source file | done |
 | NFR-009 | Gain limiting before output | `AudioSafety.SoftLimit` on the master bus | done |
 | NFR-010 | No audio after a disconnect or quit | `AudioEngine.Shutdown`; the disconnect path fades out and stops by default (covered by `AudioEnginePlayModeTests` and `NetworkIntegrationTests`) | done |

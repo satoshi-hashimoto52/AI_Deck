@@ -8,6 +8,7 @@ using AIDeck.Core.Deck;
 using AIDeck.Core.Diagnostics;
 using AIDeck.Core.Library;
 using AIDeck.Core.Model;
+using AIDeck.Core.Audio;
 using AIDeck.Core.Net;
 using AIDeck.Core.Settings;
 using AIDeck.Host;
@@ -313,6 +314,109 @@ namespace AIDeck.Tests.PlayMode
 
             Assert.That(_controller.State, Is.EqualTo(ControllerSessionState.Failed));
             Assert.That(_controller.StatusText, Is.Not.Empty);
+        }
+
+        [UnityTest]
+        public IEnumerator RecordingIsStartedAndStoppedFromTheController()
+        {
+            // FR-050 and FR-051 end to end: the button is on the iPad, the file is written on
+            // the Mac, and the state comes back in the snapshot.
+            yield return ConnectAndWait();
+
+            string recordedPath = null;
+            _session.CommandReceived += message =>
+            {
+                if (message.Type == MessageType.RecordStart)
+                {
+                    _commands.StartRecording();
+                }
+                else if (message.Type == MessageType.RecordStop)
+                {
+                    recordedPath = _engine.StopRecording();
+                }
+            };
+
+            var recording = false;
+            _controller.SnapshotReceived += snapshot => recording |= snapshot.IsRecording;
+
+            _controller.Send(MessageType.RecordStart);
+            yield return Pump(4f, () => recording);
+
+            Assert.That(_engine.IsRecording, Is.True, _engine.RecordingFailure);
+            Assert.That(recording, Is.True, "the controller was never told that recording had started");
+
+            yield return Pump(1f);
+
+            _controller.Send(MessageType.RecordStop);
+            yield return Pump(4f, () => recordedPath != null);
+
+            Assert.That(recordedPath, Is.Not.Null, "the recording was never saved");
+            Assert.That(File.Exists(recordedPath), Is.True);
+            Assert.That(new FileInfo(recordedPath).Length, Is.GreaterThan(WavHeader.HeaderSize));
+
+            TestAudioFile.Delete(recordedPath);
+        }
+
+        [UnityTest]
+        public IEnumerator ControlLatencyIsMeasuredAndReported()
+        {
+            // NFR-003 asks that control does not feel laggy on a normal LAN. Both ends are on
+            // one machine here, so this is a **floor**, not an answer: it shows what the
+            // protocol and the poll loops cost with the network itself taken out. The figure
+            // over the air is measured with the iPad in Phase 5.
+            yield return ConnectAndWait();
+
+            const int samples = 30;
+            var applied = 0;
+            double totalMs = 0d;
+            var worstMs = 0d;
+            var sentAt = 0d;
+            var waiting = false;
+
+            _session.CommandReceived += message =>
+            {
+                if (message.Type != MessageType.Crossfader || !waiting)
+                {
+                    return;
+                }
+
+                var elapsed = (Time.realtimeSinceStartupAsDouble - sentAt) * 1000d;
+                totalMs += elapsed;
+                worstMs = Math.Max(worstMs, elapsed);
+                applied++;
+                waiting = false;
+            };
+
+            for (var i = 0; i < samples; i++)
+            {
+                sentAt = Time.realtimeSinceStartupAsDouble;
+                waiting = true;
+                _controller.Send(MessageType.Crossfader, null, Messages.Float(i / (float)samples));
+
+                var deadline = Time.realtimeSinceStartup + 1f;
+                while (waiting && Time.realtimeSinceStartup < deadline)
+                {
+                    var delta = Time.unscaledDeltaTime;
+                    _session.Poll(delta);
+                    _controller.Poll(delta);
+                    yield return null;
+                }
+            }
+
+            Assert.That(applied, Is.GreaterThan(samples / 2),
+                "most control messages should arrive; only " + applied + " of " + samples + " did");
+
+            var averageMs = totalMs / applied;
+            UnityEngine.Debug.Log(
+                $"[AI Deck latency] in-process floor over {applied} samples: " +
+                $"average {averageMs:0.0} ms, worst {worstMs:0.0} ms " +
+                "(both ends on one machine; the real-LAN figure is measured in Phase 5)");
+
+            // Both ends poll once per frame, so a round trip costs a frame or two. Anything far
+            // above that would mean something is blocking rather than merely being scheduled.
+            Assert.That(averageMs, Is.LessThan(120d),
+                $"an in-process control round trip averaged {averageMs:0.0} ms, which is far more " +
+                "than the two poll cycles it should cost");
         }
 
         [UnityTest]

@@ -28,10 +28,18 @@ UNITY=/Applications/Unity/Hub/Editor/6000.3.23f1/Unity.app/Contents/MacOS/Unity
 "$UNITY" -batchmode -nographics -projectPath AIDeckUnity \
          -runTests -testPlatform PlayMode \
          -testResults /tmp/playmode-results.xml -logFile /tmp/playmode.log
+
+# The 30-minute soak (NFR-005). Opt-in: without the variable it reports ignored, not passed.
+AIDECK_SOAK_MINUTES=30 "$UNITY" -batchmode -nographics -projectPath AIDeckUnity \
+         -runTests -testPlatform PlayMode -testFilter AIDeck.Tests.PlayMode.SoakTests \
+         -testResults /tmp/soak.xml -logFile /tmp/soak.log
 ```
 
 Exit code 0 means every test passed; 2 means at least one failed. The XML holds the
 per-test detail.
+
+Unity must not be open in the editor while a batch run is in progress — it holds a lock on
+the project. The three runs above cannot overlap for the same reason.
 
 ## 3. EditMode coverage (§10.1)
 
@@ -114,6 +122,20 @@ multi-touch (FR-071) and cancellation (FR-073) without a touchscreen:
 The fixture generates its own WAV with the shipping `WavRecorder` rather than committing a
 binary test asset, so every load test is also an end-to-end check that what AI Deck writes,
 AI Deck can read.
+
+`QualityPlayModeTests` covers the non-functional requirements that can only be shown by
+running the thing:
+
+| Requirement | Test | How it is shown |
+| --- | --- | --- |
+| NFR-001 audio independent of UI load | `AudioKeepsRunningWhileTheMainThreadStalls` | The main thread busy-waits for 300 ms; the audio thread must keep producing blocks |
+| NFR-002 main thread not blocked | `LoadingDoesNotBlockTheMainThread` | Frames keep advancing during a decode, and no frame exceeds 2 s |
+| NFR-005 shape of the long run | `ShortSoakKeepsPlayingWithoutDrift` | Five seconds of looping two-deck playback with no drift out of the loop |
+| NFR-006 no personal data in logs | `DiagnosticLogNeverCarriesAFullPath`, `TheSnapshotCarriesAFileNameNotAPath` | A recording failure — the most likely place for a path to leak — is checked, as is the broadcast snapshot |
+
+`SoakTests` is the full NFR-005 run. It is **opt-in**: without `AIDECK_SOAK_MINUTES` it
+reports *ignored*, never passed. §14 draws a hard line between a test that was not run and one
+that succeeded, and a half-hour test silently counted as passing would be exactly that mistake.
 
 ### When there is no audio device
 
@@ -210,6 +232,17 @@ Two copies of the built app, on one Mac, over the real network interface — not
 A stale stored address is worth noting: the first run tried a leftover address, reported "The
 Mac did not answer", and then switched to the discovered host on its own. That path is the
 reason the auto-connect rule exists.
+
+### Phase 4 verification performed this way
+
+| Check | Result |
+| --- | --- |
+| Clean Mac build from a deleted `Library/` | Succeeded, 28 s, arm64, 0 errors |
+| iOS Xcode project generated | Succeeded, 692 MB project |
+| iOS project compiles (`xcodebuild`, no signing) | `** BUILD SUCCEEDED **`, arm64 `AIDeck.app`, 0 errors |
+| 30-minute soak (NFR-005) | Passed: heap 19 MB → 19 MB, peak 21 MB, longest silence 0.00 s |
+| Control latency, in-process floor (NFR-003) | 0.1 ms average, 0.2 ms worst over 30 samples |
+| Audio through a 300 ms main-thread stall (NFR-001) | Audio thread kept producing |
 
 ## 6. Manual tests (§10.3)
 

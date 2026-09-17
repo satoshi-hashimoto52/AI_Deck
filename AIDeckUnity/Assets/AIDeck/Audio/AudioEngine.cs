@@ -312,6 +312,7 @@ namespace AIDeck.Audio
                 channel.Muted = Mixer.Mute(id);
                 channel.FilterKnob = Mixer.Filter(id);
                 channel.EchoEnabled = Mixer.Echo(id);
+                channel.CueEnabled = Mixer.Cue(id);
             }
         }
 

@@ -65,6 +65,7 @@ namespace AIDeck.Host
             BuildTopBar(commands);
 
             Browser = BrowserView.Create("Browser", _content, Router);
+            Browser.SeekRequested += commands.Seek;
 
             var decks = UiFactory.Create("Decks", _content);
             DeckA = DeckPanelView.Create("DeckA", decks, Router, DeckId.A, commands, false);

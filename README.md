@@ -34,9 +34,11 @@ iPad cannot do anything while disconnected, which for a controller is the correc
 | Network | Both devices on the same LAN |
 | Audio | Mac built-in speakers, headphones, or any attached audio device |
 
-The macOS and iPadOS minimums are what the project is configured for. They are confirmed
-against the actual iPad mini in Phase 5 and updated here if the device requires otherwise —
-see Q1 in [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md).
+The macOS and iPadOS figures are the minimums the builds target. The Mac app has been built
+and run on macOS 26.3.1 with an Apple M1; the iPad app has been built and compiled against the
+iOS 26.5 SDK but not yet installed on a device, so the iPadOS minimum is confirmed against the
+actual iPad mini in Phase 5 — see Q1 in
+[`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md).
 
 Supported audio formats: **MP3, WAV, AIFF**. Your files are opened read-only and are never
 modified, moved or deleted.
@@ -133,8 +135,30 @@ process, which is how the controller layout is checked without an iPad.
 | 1 | Mac-only DJ: library, two decks, waveform, mixer, effects, recording, Mac UI | **complete** — Mac app builds and runs |
 | 2 | iPad controller UI | **complete** — layout verified at iPad mini size |
 | 3 | Networking: discovery, connection, control, state sync, reconnection | **complete** — 45 PlayMode tests passing, verified between two processes on a real LAN |
-| 4 | Builds and quality | not started |
-| 5 | Device verification | not started |
+| 4 | Builds and quality: iOS project compiles, NFR checks, 30-minute run | **complete** |
+| 5 | Device verification | **needs you** — see [What is left for you](#what-is-left-for-you) |
+
+## What is left for you
+
+Everything that can be automated is done. What remains needs an Apple ID, a physical iPad, or
+a pair of ears — none of which a build script has.
+
+1. **Sign the iPad app.** Open `build/ios/Unity-iPhone.xcodeproj`, pick your Team under
+   *Signing & Capabilities*. The project already builds without signing, so if Xcode complains
+   at this point it is about your account, not about the project —
+   [`docs/BUILD_IPAD.md`](docs/BUILD_IPAD.md) has the no-signing compile check that proves it.
+2. **Prepare the iPad.** Trust the Mac, enable Developer Mode, and approve the certificate
+   after the first install.
+3. **Install and run it**, and allow the local network permission on first launch. Without it
+   the iPad cannot see the Mac at all, and it fails silently.
+4. **Check the things only hardware shows**: the landscape layout and safe area on the real
+   screen, two-finger operation, whether the jog *feels* responsive, and how it sounds —
+   levels, filter sweeps, echo, and the character of the scratch.
+5. **Try the failure paths**: turn Wi-Fi off and on, and background the app and return.
+
+[`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) §6 lists these as M1–M8 with pass conditions, and
+[`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) §4 lists the open questions each one
+answers.
 
 ## Licence and content
 

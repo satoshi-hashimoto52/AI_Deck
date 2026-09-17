@@ -215,6 +215,12 @@ namespace AIDeck.Tests.EditMode.Core
             Assert.That(MessageType.JogNudge.Channel(), Is.EqualTo(MessageChannel.Fast));
             Assert.That(MessageType.StateSnapshot.Channel(), Is.EqualTo(MessageChannel.Fast));
             Assert.That(MessageType.LoadTrack.Channel(), Is.EqualTo(MessageChannel.Reliable));
+
+            // Heartbeats are reliable on purpose: liveness must not depend on the lossy
+            // channel, or a network that drops UDP between clients would make the session
+            // time out and reconnect forever while TCP was perfectly healthy.
+            Assert.That(MessageType.Ping.Channel(), Is.EqualTo(MessageChannel.Reliable));
+            Assert.That(MessageType.Pong.Channel(), Is.EqualTo(MessageChannel.Reliable));
             Assert.That(MessageType.Play.Channel(), Is.EqualTo(MessageChannel.Reliable));
             Assert.That(MessageType.RecordStart.Channel(), Is.EqualTo(MessageChannel.Reliable));
             Assert.That(MessageType.AllStop.Channel(), Is.EqualTo(MessageChannel.Reliable),

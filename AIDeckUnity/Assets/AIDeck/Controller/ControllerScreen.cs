@@ -78,6 +78,7 @@ namespace AIDeck.Controller
             _disconnectButton.Clicked += () => DisconnectRequested?.Invoke();
 
             Browser = BrowserView.Create("Browser", _content, Router);
+            Browser.SeekRequested += commands.Seek;
 
             _decks = UiFactory.Create("Decks", _content);
             DeckA = DeckPanelView.Create("DeckA", _decks, Router, DeckId.A, commands, false);
@@ -182,6 +183,7 @@ namespace AIDeck.Controller
         public void ReleaseAll()
         {
             Router.CancelAll();
+            Browser.ReleaseAll();
             DeckA.ReleaseAll();
             DeckB.ReleaseAll();
             Mixer.ReleaseAll();

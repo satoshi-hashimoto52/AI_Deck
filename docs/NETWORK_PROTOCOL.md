@@ -10,8 +10,8 @@ protocol has no authentication, so it must not be exposed beyond a trusted netwo
 | Channel | Transport | Port | Carries |
 | --- | --- | --- | --- |
 | Discovery | UDP broadcast | 47812 | Host beacon, 1 Hz |
-| Reliable | TCP | 47810 | Session, transport commands, loading, recording, queries |
-| Fast | UDP | 47811 | Continuous controls, state snapshots, heartbeats |
+| Reliable | TCP | 47810 | Session, heartbeats, transport commands, loading, recording, queries |
+| Fast | UDP | 47811 | Continuous controls and state snapshots |
 
 The split follows §4.4 directly. Anything that changes *what is loaded* or *whether audio
 is running* goes over TCP, because losing it would leave the two ends describing different
@@ -19,8 +19,9 @@ worlds. Anything that is a sample of a continuously moving control goes over UDP
 a late value is worse than no value — by the time it arrives the finger has already moved.
 
 `MessageType.Channel()` is the single source of truth for that classification and is
-covered by a test. `AllStop` is reliable on purpose: a safety command must never be
-droppable.
+covered by a test. Two entries are reliable for reasons worth stating: `AllStop`, because a
+safety command must never be droppable, and `Ping`/`Pong`, because liveness must not depend on
+the lossy channel (see the heartbeat section below).
 
 ## 2. Frame format
 
@@ -87,10 +88,10 @@ because an unknown type decodes to `MessageType.Unknown` and is ignored.
 | # | Name | Dir | Channel | Payload |
 | --- | --- | --- | --- | --- |
 | 1 | `Hello` | C | TCP | device name, app version, controller UDP port |
-| 2 | `Ping` | both | UDP | — |
+| 2 | `Ping` | both | TCP | — |
 | 3 | `Bye` | both | TCP | — |
 | 100 | `HelloAck` | H | TCP | host name, app version, host UDP port |
-| 101 | `Pong` | both | UDP | — |
+| 101 | `Pong` | both | TCP | — |
 
 ### Deck transport (10–23, reliable)
 
@@ -192,8 +193,19 @@ rule, and V1 has no reason to solve that.
 
 ### Heartbeat (FR-062, FR-065)
 
-`Ping`/`Pong` every second on the fast channel. Three seconds of silence marks the peer
-gone. The controller then shows `Reconnecting`, keeps its UI responsive but visibly
+`Ping`/`Pong` every second **on the reliable channel**. Three seconds of silence marks the
+peer gone.
+
+Heartbeats are deliberately not on the fast channel, even though they are small and frequent
+and look like they belong there. Liveness must not depend on the lossy transport: on a network
+that drops UDP between clients — or behind a firewall that blocks the controller's inbound
+datagrams — the session would otherwise time out every three seconds and reconnect forever,
+while the TCP connection was perfectly healthy the whole time.
+
+That split also gives a useful diagnosis. When heartbeats are arriving but snapshots are not,
+the link is up and the fast channel is being dropped, and the controller says exactly that
+("Connected …, but not receiving updates") instead of silently showing state that stopped
+changing. The controller then shows `Reconnecting`, keeps its UI responsive but visibly
 inactive, and retries. On reconnection it re-runs the handshake and takes the host's state
 wholesale — there is no attempt to replay buffered intents, because a command composed
 before the drop is almost certainly no longer what the user wants.

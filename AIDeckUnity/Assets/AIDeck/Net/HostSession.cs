@@ -326,8 +326,7 @@ namespace AIDeck.Net
 
                 case MessageType.Ping:
                     _sinceHeartbeatHeard = 0f;
-                    SendFast(new NetMessage(MessageType.Pong, null,
-                        _sequence.Next(MessageType.Pong, null), NetMessage.NowMs()));
+                    SendReliable(MessageType.Pong);
                     return;
 
                 case MessageType.Pong:
@@ -403,8 +402,7 @@ namespace AIDeck.Net
             if (_sinceHeartbeatSent >= ProtocolInfo.HeartbeatIntervalSeconds)
             {
                 _sinceHeartbeatSent = 0f;
-                SendFast(new NetMessage(MessageType.Ping, null,
-                    _sequence.Next(MessageType.Ping, null), NetMessage.NowMs()));
+                SendReliable(MessageType.Ping);
             }
 
             _sinceHeartbeatHeard += deltaSeconds;

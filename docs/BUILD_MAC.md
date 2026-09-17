@@ -1,8 +1,7 @@
 # Building AI Deck for macOS
 
-> **Verification status: not yet verified.** This procedure is written from the project
-> configuration and is executed end to end in Phase 4. Until this notice is removed, treat it
-> as the intended procedure rather than a confirmed one.
+> **Verified on 2026-09-18** on macOS 26.3.1 / Apple M1 with Unity 6000.3.23f1. The build
+> succeeds, produces a native arm64 binary and runs.
 
 ## Prerequisites
 
@@ -30,12 +29,48 @@ Output: `build/mac/AI Deck.app`.
 ## What the build script sets
 
 * Target: `StandaloneOSX`, architecture **Apple Silicon** (`ARM64`)
-* Scripting backend: IL2CPP
+* Scripting backend: **IL2CPP when that module is installed, otherwise Mono**. The script
+  probes the editor's playback engine folder and logs which it chose, so a build is never
+  silently different from what was expected. IL2CPP is the better fit for a real-time audio
+  path, but the macOS IL2CPP module is a separate Unity Hub download; Mono is fully supported
+  and still produces a native arm64 binary. To switch, install **macOS Build Support (IL2CPP)**
+  in Unity Hub — no code change is needed.
 * Bundle identifier: `com.aideck.host`
 * Minimum macOS version: 12.0
 * `NSLocalNetworkUsageDescription` added to `Info.plist` — macOS prompts before an app may
   reach other devices on the LAN, and without the key the prompt never appears and discovery
   silently fails
+
+Verified in the produced `AI Deck.app`:
+
+| | |
+| --- | --- |
+| Executable | `Mach-O 64-bit executable arm64` |
+| `CFBundleIdentifier` | `com.aideck.host` |
+| `LSMinimumSystemVersion` | `12.0` |
+| `NSLocalNetworkUsageDescription` | present |
+| Build output | 65 MB, 0 errors |
+
+## Where the app keeps its data
+
+Unity keys `persistentDataPath` on the **bundle identifier**, so the Mac host's settings,
+library and waveform cache live in:
+
+```
+~/Library/Application Support/com.aideck.host/
+```
+
+Deleting that folder resets the library and settings; it never touches your music.
+
+## Running it without clicking
+
+The host accepts startup options for bringing it up in a known state — useful for scripting
+and for the checks in [`TEST_PLAN.md`](TEST_PLAN.md):
+
+```bash
+"build/mac/AI Deck.app/Contents/MacOS/AI Deck" \
+    -aideck-import "~/Music/AI Deck" -aideck-autoplay
+```
 
 ## First launch
 

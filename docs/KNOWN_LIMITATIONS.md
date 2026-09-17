@@ -4,7 +4,7 @@ Recorded deliberately, per §14 of
 [Issue #1](https://github.com/satoshi-hashimoto52/AI_Deck/issues/1): a feature that was
 simplified or blocked must be written down, not quietly marked complete.
 
-Last updated: **Phase 0 complete, 2026-09-18.**
+Last updated: **Phase 4 complete, 2026-09-18.**
 
 ## 1. Accepted for V1 by the specification
 
@@ -142,7 +142,22 @@ do so *silently* — discovery simply finds nothing. The build adds
 `NSLocalNetworkUsageDescription` so the prompt appears; if it was declined, re-enable it in
 system settings.
 
-### 2.9 A recording interrupted by a crash loses up to 5 seconds
+### 2.9 Cue monitoring is split cue, not a separate output
+
+AI Deck plays through one output device, so there is nowhere separate to send the cue. With a
+cue engaged, the left channel carries the cue and the right carries the master.
+
+This is the standard answer on hardware with the same constraint, and it is the only
+arrangement that lets a DJ hear a track that is still faded out. But it does change what the
+master sounds like while a cue is on, so the mixer labels the state `SPLIT CUE (L)`.
+
+A true separate cue output would need a second audio device, which means external DJ hardware —
+out of scope for V1 by §8.
+
+The recording is taken before the split, so a recording made while cueing contains the master
+only.
+
+### 2.10 A recording interrupted by a crash loses up to 5 seconds
 
 The header's size fields are refreshed every 5 seconds, so a file recovered after a crash is
 valid up to the last refresh. Audio written after it is present in the file but not declared
@@ -172,8 +187,21 @@ Carried forward and resolved as the phases proceed.
 
 | # | Question | Status |
 | --- | --- | --- |
-| Q1 | Minimum macOS and iPadOS versions to state in the README | Project is configured for macOS 12.0 and iOS 15.0; to be confirmed against the actual iPad mini in Phase 5 |
-| Q2 | Does the iPad need `NSLocalNetworkUsageDescription` accepted before discovery works? | Expected yes on iOS 14+; the build post-processor adds it. Confirm on device in Phase 5 |
-| Q3 | Does macOS 26 prompt for local network access for the host? | Expected yes; confirm in Phase 4/5 |
-| Q4 | Actual end-to-end control latency on the target LAN | Measure in Phase 4 |
+| Q1 | Minimum macOS and iPadOS versions to state in the README | **macOS 12.0 settled** — built and run on 26.3.1, `LSMinimumSystemVersion 12.0`. **iPadOS 15.0 not yet confirmed**: the app compiles against the iOS 26.5 SDK with `IPHONEOS_DEPLOYMENT_TARGET 15.0`, but has not run on a device. Confirm in Phase 5 |
+| Q2 | Does the iPad need `NSLocalNetworkUsageDescription` accepted before discovery works? | **Key confirmed present** in the built `AIDeck.app`. Whether the prompt appears and what happens if it is declined is a device behaviour — Phase 5 |
+| Q3 | Does macOS prompt for local network access for the host? | **Not observed** on macOS 26.3.1 when the host was launched from a terminal; discovery and connection worked immediately between two processes. A first launch from the Finder may still prompt. The key is present either way |
+| Q4 | Actual end-to-end control latency on the target LAN | **Not measured on a real LAN.** Both processes ran on one Mac, so the figure would be a floor rather than an answer. Measure with the iPad in Phase 5 |
 | Q5 | Whether the default 1.2 s BRAKE and 0.9 s BACKSPIN feel right | Subjective; confirm in Phase 5 |
+| Q6 | Whether the linear-interpolation scratch sounds acceptable at speed | Subjective; confirm in Phase 5 |
+| Q7 | Behaviour when Wi-Fi drops and returns on a real device | The reconnect path is covered by an automated test over sockets, but a radio going down is not the same as a socket closing. Confirm in Phase 5 |
+
+## 5. Verified in Phase 4
+
+For completeness, the things that were open and are now closed:
+
+* The macOS build produces a native arm64 binary and runs. 
+* The iOS Xcode project generates **and compiles** to an arm64 `AIDeck.app` with zero errors,
+  against the iOS 26.5 SDK. Only signing remains.
+* Both `Info.plist` files carry `NSLocalNetworkUsageDescription`; the iPad one is iPad-only and
+  landscape-only.
+* 30 minutes of continuous two-deck playback — see `docs/TEST_PLAN.md` for the result.

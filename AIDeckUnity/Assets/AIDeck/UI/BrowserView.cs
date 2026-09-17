@@ -29,12 +29,16 @@ namespace AIDeck.UI
         /// <summary>Raised with the track and target deck (FR-020, FR-021).</summary>
         public event Action<TrackInfo, DeckId> LoadRequested;
 
+        /// <summary>Raised when the user scrubs a waveform to a new position (FR-025).</summary>
+        public event Action<DeckId, double> SeekRequested;
+
         public TrackListView Library => _library;
 
         private sealed class WaveformStrip
         {
             public Text Header;
             public WaveformView Wave;
+            public WaveformScrubber Scrubber;
             public Text Elapsed;
             public Text Remaining;
         }
@@ -74,6 +78,11 @@ namespace AIDeck.UI
                     Remaining = UiFactory.CreateText($"Remaining{deck}", _wavePanel, "-0:00",
                         Theme.FontSizeLabel, TextAnchor.MiddleRight, Theme.TextDim)
                 };
+
+                // The scrub target sits on top of the waveform it drives.
+                strip.Scrubber = WaveformScrubber.Create($"Scrub{deck}", _wavePanel, router, deck);
+                strip.Scrubber.WindowSeconds = strip.Wave.WindowSeconds;
+                strip.Scrubber.SeekRequested += (d, seconds) => SeekRequested?.Invoke(d, seconds);
 
                 _strips[i] = strip;
             }
@@ -118,7 +127,9 @@ namespace AIDeck.UI
                 UiFactory.Place(strip.Header.rectTransform, pad, y, 120f, 16f);
                 UiFactory.Place(strip.Elapsed.rectTransform, pad + innerWidth - 180f, y, 88f, 16f);
                 UiFactory.Place(strip.Remaining.rectTransform, pad + innerWidth - 88f, y, 88f, 16f);
-                UiFactory.Place(strip.Wave.rectTransform, pad, y + 18f, innerWidth, Mathf.Max(20f, stripHeight - 24f));
+                var waveHeight = Mathf.Max(20f, stripHeight - 24f);
+                UiFactory.Place(strip.Wave.rectTransform, pad, y + 18f, innerWidth, waveHeight);
+                UiFactory.Place(strip.Scrubber.Rect, pad, y + 18f, innerWidth, waveHeight);
             }
         }
 
@@ -134,6 +145,15 @@ namespace AIDeck.UI
         private void ApplyStrip(int index, DeckSnapshot deck)
         {
             var strip = _strips[index];
+            strip.Scrubber.HasTrack = deck.HasTrack;
+
+            // While a finger is scrubbing, the incoming position is the result of that scrub;
+            // feeding it back as the reference would make the gesture accelerate away.
+            if (!strip.Scrubber.IsScrubbing)
+            {
+                strip.Scrubber.CurrentPosition = deck.PositionSeconds;
+            }
+
             strip.Wave.SetPosition(deck.PositionSeconds);
             strip.Wave.SetLoop(deck.LoopActive, deck.LoopInSeconds, deck.LoopOutSeconds);
             strip.Wave.SetCue(deck.CueIsSet, deck.CueSeconds);
@@ -163,5 +183,14 @@ namespace AIDeck.UI
         }
 
         public void SetTracks(IReadOnlyList<TrackInfo> tracks) => _library.SetTracks(tracks);
+
+        /// <summary>Releases a scrub in progress (FR-066, FR-074).</summary>
+        public void ReleaseAll()
+        {
+            foreach (var strip in _strips)
+            {
+                strip?.Scrubber?.ForceRelease();
+            }
+        }
     }
 }

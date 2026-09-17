@@ -103,10 +103,14 @@ namespace AIDeck.Core.Net
                 case MessageType.MasterGain:
                 case MessageType.Filter:
                 case MessageType.StateSnapshot:
-                case MessageType.Ping:
-                case MessageType.Pong:
                 case MessageType.Discovery:
                     return MessageChannel.Fast;
+
+                // Ping and Pong are deliberately *reliable*. Liveness must not depend on the
+                // lossy channel: on a network that drops UDP between clients — or behind a
+                // firewall that blocks the controller's inbound datagrams — the session would
+                // otherwise time out every three seconds and reconnect forever, even though
+                // the TCP connection was perfectly healthy the whole time.
                 default:
                     return MessageChannel.Reliable;
             }

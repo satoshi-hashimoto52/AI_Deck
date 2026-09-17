@@ -1,8 +1,9 @@
 # Building AI Deck for iPad mini
 
-> **Verification status: not yet verified.** The Unity side is executed in Phase 4. The
-> signing and installation steps require an Apple ID, a Team selection and a physical device,
-> so they are completed by the user in Phase 5.
+> **Steps 1 and the compile are verified** (2026-09-18, Xcode 26.6, iOS 26.5 SDK): Unity
+> generates the Xcode project and it builds to an arm64 `AIDeck.app` with zero errors.
+> **Signing and installation are not** — they need an Apple ID, a Team selection and a
+> physical iPad, so they are yours to do.
 
 ## Prerequisites
 
@@ -27,6 +28,21 @@ Output: `build/ios/Unity-iPhone.xcodeproj`.
 
 Or from the editor: **AI Deck → Build → iOS (Xcode project)**.
 
+### Checking it compiles before you touch signing
+
+Worth doing once, because it separates "the project is wrong" from "my Team is wrong":
+
+```bash
+cd build/ios
+xcodebuild -project Unity-iPhone.xcodeproj -target Unity-iPhone \
+           -configuration Release -sdk iphoneos \
+           CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+```
+
+This takes several minutes — it compiles the IL2CPP C++ output — and ends in
+`** BUILD SUCCEEDED **` with `build/Release-iphoneos/AIDeck.app` inside. That app cannot be
+installed, because it is unsigned; it only proves the generated project is sound.
+
 ### What the build script sets
 
 * Target: `iOS`, device SDK, IL2CPP, ARM64
@@ -38,6 +54,19 @@ Or from the editor: **AI Deck → Build → iOS (Xcode project)**.
   before an app may reach other devices on the LAN, and without it discovery silently fails
   (FR-060)
 * `UIRequiresPersistentWiFi` set, so the Wi-Fi radio is not powered down mid-set
+
+Verified in the generated project and the compiled app:
+
+| | |
+| --- | --- |
+| `IPHONEOS_DEPLOYMENT_TARGET` | `15.0` |
+| `PRODUCT_BUNDLE_IDENTIFIER` | `com.aideck.controller` |
+| `TARGETED_DEVICE_FAMILY` / `UIDeviceFamily` | `2` (iPad only) |
+| `ARCHS` | `arm64` |
+| `UISupportedInterfaceOrientations~ipad` | landscape left and right only |
+| `NSLocalNetworkUsageDescription` | present |
+| `UIRequiresPersistentWiFi` | `true` |
+| Executable | `Mach-O 64-bit executable arm64` |
 
 ## Step 2 — signing (requires you)
 

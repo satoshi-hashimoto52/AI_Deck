@@ -65,10 +65,18 @@ namespace AIDeck.Core.Audio
         public void ResetClip() => _meter.ResetClip();
 
         /// <summary>
-        /// Audio thread. Applies the master stage to <paramref name="mix"/> in place and hands
-        /// the result to the recorder.
+        /// Audio thread. Applies the master stage to <paramref name="mix"/> in place, hands the
+        /// result to the recorder, and then folds in the cue bus if anything is cued.
         /// </summary>
-        public void Process(float[] mix, int channels)
+        public void Process(float[] mix, int channels) => Process(mix, null, channels);
+
+        /// <summary>
+        /// Audio thread, with cue monitoring.
+        ///
+        /// The recorder is fed the master **before** the cue is folded in, so what is recorded
+        /// is what the audience heard, not what was in the DJ's headphones.
+        /// </summary>
+        public void Process(float[] mix, float[] cueMix, int channels)
         {
             if (mix == null || channels < 1)
             {
@@ -101,6 +109,34 @@ namespace AIDeck.Core.Audio
 
             // Submit only copies into a lock-free ring; the file is written elsewhere.
             Recorder?.Submit(mix, mix.Length);
+
+            ApplySplitCue(mix, cueMix, channels);
+        }
+
+        /// <summary>
+        /// Folds the cue bus into the left channel, leaving the master in the right.
+        ///
+        /// AI Deck has one output device, so it cannot send the cue somewhere separate the way
+        /// a mixer with a headphone socket does. Split cue is the standard answer on hardware
+        /// with the same constraint, and it is the only arrangement that lets a DJ hear a track
+        /// that is still faded out — which is the entire purpose of a cue button.
+        ///
+        /// The cue is pre-fader and can therefore be loud, so it goes through the same limiter
+        /// as the master.
+        /// </summary>
+        private void ApplySplitCue(float[] mix, float[] cueMix, int channels)
+        {
+            if (cueMix == null || channels < 2 || cueMix.Length != mix.Length)
+            {
+                return;
+            }
+
+            var frames = mix.Length / channels;
+            for (var frame = 0; frame < frames; frame++)
+            {
+                var index = frame * channels;
+                mix[index] = AudioSafety.SoftLimit(cueMix[index] * _currentGain);
+            }
         }
     }
 }

@@ -248,7 +248,22 @@ namespace AIDeck.UI
             _record.State = _recording ? ButtonVisualState.Error : ButtonVisualState.Normal;
 
             var masterDb = AudioSafety.LinearToDb(snapshot.MasterGain);
-            _masterLabel.text = "MASTER " + masterDb.ToString("0.0", CultureInfo.InvariantCulture) + " dB";
+            var master = "MASTER " + masterDb.ToString("0.0", CultureInfo.InvariantCulture) + " dB";
+
+            // With one output device the cue can only be split across the stereo field, which
+            // changes what the master sounds like. Saying so on screen turns a surprise into a
+            // mode the user can see they are in.
+            if (_cueAOn || _cueBOn)
+            {
+                master += "  ·  SPLIT CUE (L)";
+                _masterLabel.color = Theme.Warning;
+            }
+            else
+            {
+                _masterLabel.color = Theme.TextDim;
+            }
+
+            _masterLabel.text = master;
 
             _recordLabel.text = _recording
                 ? "REC " + TrackInfo.FormatDuration(snapshot.RecordingSeconds) +

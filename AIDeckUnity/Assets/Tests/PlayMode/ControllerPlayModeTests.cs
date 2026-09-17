@@ -299,6 +299,113 @@ namespace AIDeck.Tests.PlayMode
             }
         }
 
+        [UnityTest]
+        public IEnumerator ScrubbingTheWaveformSeeksTheDeck()
+        {
+            // FR-025. The waveform scrolls past a fixed playhead, so dragging it is the same
+            // gesture as moving a record under the needle.
+            var snapshot = PopulatedSnapshot();
+            snapshot.DeckA.PositionSeconds = 60d;
+            _backend.Current = snapshot;
+            yield return new WaitForSeconds(0.2f);
+
+            var scrubber = FindScrubber(_app.Screen.Browser, "ScrubA");
+            Assert.That(scrubber, Is.Not.Null, "deck A should have a scrub area over its waveform");
+
+            var centre = ScreenCentre(scrubber.Rect);
+            var router = _app.Screen.Router;
+
+            router.PointerDown(1, centre);
+            // Drag right by a quarter of the strip: the track moves right, so time goes back.
+            router.PointerMove(1, centre + new Vector2(scrubber.Rect.rect.width * 0.25f, 0f));
+
+            Assert.That(scrubber.IsScrubbing, Is.True);
+            Assert.That(_backend.Calls, Does.Contain("Seek:A"));
+
+            router.PointerUp(1, centre);
+            Assert.That(scrubber.IsScrubbing, Is.False);
+        }
+
+        [UnityTest]
+        public IEnumerator ATapOnTheWaveformDoesNotSeek()
+        {
+            // A tap that moves a pixel or two is not a scrub; seeking on it would make the
+            // waveform impossible to touch without moving the track.
+            _backend.Current = PopulatedSnapshot();
+            yield return new WaitForSeconds(0.2f);
+
+            var scrubber = FindScrubber(_app.Screen.Browser, "ScrubA");
+            var centre = ScreenCentre(scrubber.Rect);
+            var router = _app.Screen.Router;
+
+            router.PointerDown(1, centre);
+            router.PointerMove(1, centre + new Vector2(2f, 0f));
+            router.PointerUp(1, centre + new Vector2(2f, 0f));
+
+            Assert.That(_backend.Calls, Does.Not.Contain("Seek:A"));
+        }
+
+        [UnityTest]
+        public IEnumerator ScrubbingAnEmptyDeckDoesNothing()
+        {
+            _backend.Current = StateSnapshot.Empty;
+            yield return new WaitForSeconds(0.2f);
+
+            var scrubber = FindScrubber(_app.Screen.Browser, "ScrubA");
+            var centre = ScreenCentre(scrubber.Rect);
+            var router = _app.Screen.Router;
+
+            router.PointerDown(1, centre);
+            router.PointerMove(1, centre + new Vector2(120f, 0f));
+            router.PointerUp(1, centre);
+
+            Assert.That(_backend.Calls, Does.Not.Contain("Seek:A"));
+        }
+
+        [UnityTest]
+        public IEnumerator TheRecordButtonStartsAndStopsRecording()
+        {
+            // FR-050 and FR-051 from the controller's side: the button reflects the host's
+            // recording state and toggles against it.
+            _backend.Current = StateSnapshot.Empty;
+            yield return new WaitForSeconds(0.2f);
+
+            var record = FindButton(_app.Screen.Mixer, "Record");
+            Assert.That(record, Is.Not.Null);
+
+            var router = _app.Screen.Router;
+            var centre = ScreenCentre(record.Rect);
+
+            router.PointerDown(1, centre);
+            router.PointerUp(1, centre);
+            Assert.That(_backend.Calls, Does.Contain("RecordStart"));
+
+            // The host now reports that it is recording; the same button must stop it.
+            var recording = StateSnapshot.Empty;
+            recording.IsRecording = true;
+            recording.RecordingSeconds = 12d;
+            recording.RecordingFileName = "AIDeck_20260918_010203.wav";
+            _backend.Current = recording;
+            yield return new WaitForSeconds(0.2f);
+
+            router.PointerDown(1, centre);
+            router.PointerUp(1, centre);
+            Assert.That(_backend.Calls, Does.Contain("RecordStop"));
+        }
+
+        private static WaveformScrubber FindScrubber(Component root, string name)
+        {
+            foreach (var scrubber in root.GetComponentsInChildren<WaveformScrubber>(true))
+            {
+                if (scrubber.gameObject.name == name)
+                {
+                    return scrubber;
+                }
+            }
+
+            return null;
+        }
+
         private static ButtonWidget FindButton(Component root, string name)
         {
             foreach (var button in root.GetComponentsInChildren<ButtonWidget>(true))

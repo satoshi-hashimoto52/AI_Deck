@@ -56,6 +56,11 @@ namespace AIDeck.Net
         private float _sinceHeartbeatSent;
         private float _sinceHeartbeatHeard;
         private float _sinceReconnect;
+        private float _sinceSnapshot;
+        private bool _reportedConnected;
+
+        /// <summary>How long without a state snapshot before the user is told updates have stopped.</summary>
+        public const float StaleSnapshotSeconds = 3f;
 
         public ControllerSessionState State { get; private set; } = ControllerSessionState.Idle;
 
@@ -363,8 +368,7 @@ namespace AIDeck.Net
 
                 case MessageType.Ping:
                     _sinceHeartbeatHeard = 0f;
-                    SendFast(new NetMessage(MessageType.Pong, null,
-                        _sequence.Next(MessageType.Pong, null), NetMessage.NowMs()));
+                    SendReliable(MessageType.Pong);
                     return;
 
                 case MessageType.Pong:
@@ -373,6 +377,7 @@ namespace AIDeck.Net
 
                 case MessageType.StateSnapshot:
                     _sinceHeartbeatHeard = 0f;
+                    _sinceSnapshot = 0f;
                     // Snapshots supersede one another, so an out-of-order datagram is dropped.
                     if (_gate.Accept(message))
                     {
@@ -435,6 +440,8 @@ namespace AIDeck.Net
             State = ControllerSessionState.Connected;
             StatusText = $"Connected to {HostName}";
             _sinceHeartbeatHeard = 0f;
+            _sinceSnapshot = 0f;
+            _reportedConnected = true;
 
             // Take the host's world wholesale. Nothing from before the connection is replayed.
             SendReliable(MessageType.RequestLibrary);
@@ -454,8 +461,22 @@ namespace AIDeck.Net
             if (_sinceHeartbeatSent >= ProtocolInfo.HeartbeatIntervalSeconds)
             {
                 _sinceHeartbeatSent = 0f;
-                SendFast(new NetMessage(MessageType.Ping, null,
-                    _sequence.Next(MessageType.Ping, null), NetMessage.NowMs()));
+                SendReliable(MessageType.Ping);
+            }
+
+            // The link is alive (heartbeats are reliable) but no state is arriving, which means
+            // the fast channel is being dropped somewhere. Saying so is far better than
+            // silently showing state that stopped updating.
+            _sinceSnapshot += deltaSeconds;
+            if (_sinceSnapshot > StaleSnapshotSeconds)
+            {
+                StatusText = $"Connected to {HostName}, but not receiving updates. " +
+                             "Something on this network is blocking them.";
+            }
+            else if (!_reportedConnected)
+            {
+                _reportedConnected = true;
+                StatusText = $"Connected to {HostName}";
             }
 
             _sinceHeartbeatHeard += deltaSeconds;
@@ -536,6 +557,7 @@ namespace AIDeck.Net
             var link = _link;
             _link = null;
             _hostFastEndpoint = null;
+            _reportedConnected = false;
 
             if (link != null)
             {

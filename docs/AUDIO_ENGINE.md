@@ -177,6 +177,24 @@ In `MasterBus.Process`:
 
 The recording is taken **after** the limiter, so the file matches what was heard.
 
+### Cue monitoring (§5.4)
+
+A cued deck is also summed into a **cue bus**, taken after the filter and echo but **before**
+the channel fader, the crossfader and MUTE. That is what pre-fade listen means, and it is the
+entire point: a DJ cues a track in order to hear it while it is still faded out of the mix.
+
+AI Deck has one output device, so it cannot send the cue somewhere separate the way a mixer
+with a headphone socket does. `MasterBus` therefore applies **split cue**: the left channel
+carries the cue and the right carries the master. That is the standard arrangement on hardware
+with the same constraint, and it is the only one that makes the cue button mean anything.
+
+Two consequences worth stating:
+
+* The recorder is fed the master **before** the split, so what is recorded is what the
+  audience heard, not what was in the headphones.
+* The mixer shows `SPLIT CUE (L)` beside the master reading whenever a cue is engaged, so a
+  changed master image is a visible mode rather than a surprise.
+
 ## 7. Fades (§9)
 
 Every discontinuity gets a ramp: play, pause, cue jump, load, eject, disconnect stop and

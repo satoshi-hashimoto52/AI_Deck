@@ -58,7 +58,7 @@ namespace AIDeck.Tests.EditMode.Core
             var channel = PlayingChannel();
             var mix = new float[BlockFrames * Channels];
 
-            channel.RenderInto(mix, Channels, SampleRate);
+            channel.RenderInto(mix, null, Channels, SampleRate);
 
             // The 12 ms ramp is longer than one 512-frame block, so the first block must still
             // be climbing. A step change here would be the click §9 rules out.
@@ -78,7 +78,7 @@ namespace AIDeck.Tests.EditMode.Core
             for (var i = 0; i < 8; i++)
             {
                 Array.Clear(mix, 0, mix.Length);
-                channel.RenderInto(mix, Channels, SampleRate);
+                channel.RenderInto(mix, null, Channels, SampleRate);
             }
 
             Assert.That(channel.CurrentGain, Is.EqualTo(1f).Within(1e-3f));
@@ -93,7 +93,7 @@ namespace AIDeck.Tests.EditMode.Core
             for (var i = 0; i < 8; i++)
             {
                 Array.Clear(mix, 0, mix.Length);
-                channel.RenderInto(mix, Channels, SampleRate);
+                channel.RenderInto(mix, null, Channels, SampleRate);
             }
 
             channel.TargetGain = 0f;
@@ -102,7 +102,7 @@ namespace AIDeck.Tests.EditMode.Core
             for (var i = 0; i < 8; i++)
             {
                 Array.Clear(mix, 0, mix.Length);
-                channel.RenderInto(mix, Channels, SampleRate);
+                channel.RenderInto(mix, null, Channels, SampleRate);
             }
 
             Assert.That(channel.IsSilent, Is.True, "the host waits for this before stopping the voice");
@@ -117,14 +117,14 @@ namespace AIDeck.Tests.EditMode.Core
             for (var i = 0; i < 8; i++)
             {
                 Array.Clear(mix, 0, mix.Length);
-                channel.RenderInto(mix, Channels, SampleRate);
+                channel.RenderInto(mix, null, Channels, SampleRate);
             }
 
             channel.Muted = true;
             for (var i = 0; i < 8; i++)
             {
                 Array.Clear(mix, 0, mix.Length);
-                channel.RenderInto(mix, Channels, SampleRate);
+                channel.RenderInto(mix, null, Channels, SampleRate);
             }
 
             Assert.That(Peak(mix), Is.LessThan(1e-3f));
@@ -144,8 +144,8 @@ namespace AIDeck.Tests.EditMode.Core
             for (var i = 0; i < 8; i++)
             {
                 Array.Clear(mix, 0, mix.Length);
-                a.RenderInto(mix, Channels, SampleRate);
-                b.RenderInto(mix, Channels, SampleRate);
+                a.RenderInto(mix, null, Channels, SampleRate);
+                b.RenderInto(mix, null, Channels, SampleRate);
             }
 
             Assert.That(Peak(mix), Is.EqualTo(0.5f).Within(1e-2f), "both decks must be audible at once");
@@ -159,7 +159,7 @@ namespace AIDeck.Tests.EditMode.Core
             for (var i = 0; i < 8; i++)
             {
                 Array.Clear(mix, 0, mix.Length);
-                channel.RenderInto(mix, Channels, SampleRate);
+                channel.RenderInto(mix, null, Channels, SampleRate);
             }
 
             channel.ResetDsp();
@@ -174,7 +174,7 @@ namespace AIDeck.Tests.EditMode.Core
             channel.TargetGain = 1f;
 
             var mix = new float[BlockFrames * Channels];
-            channel.RenderInto(mix, Channels, SampleRate);
+            channel.RenderInto(mix, null, Channels, SampleRate);
 
             Assert.That(Peak(mix), Is.EqualTo(0f));
         }
@@ -187,10 +187,10 @@ namespace AIDeck.Tests.EditMode.Core
 
             // Rebuilding the DSP objects here would allocate on the audio thread, so a format
             // mismatch is skipped and the host rebuilds on the next frame.
-            channel.RenderInto(mix, Channels, 44100);
+            channel.RenderInto(mix, null, Channels, 44100);
             Assert.That(Peak(mix), Is.EqualTo(0f));
 
-            channel.RenderInto(mix, 1, SampleRate);
+            channel.RenderInto(mix, null, 1, SampleRate);
             Assert.That(Peak(mix), Is.EqualTo(0f));
         }
 
@@ -198,8 +198,8 @@ namespace AIDeck.Tests.EditMode.Core
         public void ChannelToleratesDegenerateArguments()
         {
             var channel = PlayingChannel();
-            Assert.DoesNotThrow(() => channel.RenderInto(null, Channels, SampleRate));
-            Assert.DoesNotThrow(() => channel.RenderInto(new float[8], 0, SampleRate));
+            Assert.DoesNotThrow(() => channel.RenderInto(null, null, Channels, SampleRate));
+            Assert.DoesNotThrow(() => channel.RenderInto(new float[8], null, 0, SampleRate));
         }
 
         [Test]
@@ -228,7 +228,7 @@ namespace AIDeck.Tests.EditMode.Core
             for (var i = 0; i < 40; i++)
             {
                 Array.Clear(mix, 0, mix.Length);
-                channel.RenderInto(mix, Channels, SampleRate);
+                channel.RenderInto(mix, null, Channels, SampleRate);
                 if (i >= 20)
                 {
                     peak = Math.Max(peak, Peak(mix));
@@ -236,6 +236,153 @@ namespace AIDeck.Tests.EditMode.Core
             }
 
             Assert.That(peak, Is.LessThan(0.15f), "a fully closed low-pass must remove an 8 kHz tone");
+        }
+
+        [Test]
+        public void CueIsTakenBeforeTheFaderSoAFadedOutDeckIsStillAudibleOnIt()
+        {
+            // Pre-fade listen. Cueing a deck that is faded all the way out is the entire point:
+            // it is how a DJ hears the next track before bringing it in.
+            var channel = PlayingChannel(0.5f);
+            channel.TargetGain = 0f;
+            channel.CueEnabled = true;
+
+            var mix = new float[BlockFrames * Channels];
+            var cue = new float[BlockFrames * Channels];
+
+            for (var i = 0; i < 8; i++)
+            {
+                Array.Clear(mix, 0, mix.Length);
+                Array.Clear(cue, 0, cue.Length);
+                channel.RenderInto(mix, cue, Channels, SampleRate);
+            }
+
+            Assert.That(Peak(mix), Is.LessThan(1e-3f), "a faded-out deck must not be in the master");
+            Assert.That(Peak(cue), Is.EqualTo(0.5f).Within(1e-3f), "but it must be on the cue bus");
+        }
+
+        [Test]
+        public void MuteDoesNotSilenceTheCueBus()
+        {
+            var channel = PlayingChannel(0.5f);
+            channel.Muted = true;
+            channel.CueEnabled = true;
+
+            var mix = new float[BlockFrames * Channels];
+            var cue = new float[BlockFrames * Channels];
+            for (var i = 0; i < 8; i++)
+            {
+                Array.Clear(mix, 0, mix.Length);
+                Array.Clear(cue, 0, cue.Length);
+                channel.RenderInto(mix, cue, Channels, SampleRate);
+            }
+
+            Assert.That(Peak(mix), Is.LessThan(1e-3f));
+            Assert.That(Peak(cue), Is.GreaterThan(0.4f));
+        }
+
+        [Test]
+        public void ADeckThatIsNotCuedContributesNothingToTheCueBus()
+        {
+            var channel = PlayingChannel(0.5f);
+            channel.CueEnabled = false;
+
+            var mix = new float[BlockFrames * Channels];
+            var cue = new float[BlockFrames * Channels];
+            for (var i = 0; i < 8; i++)
+            {
+                Array.Clear(mix, 0, mix.Length);
+                Array.Clear(cue, 0, cue.Length);
+                channel.RenderInto(mix, cue, Channels, SampleRate);
+            }
+
+            Assert.That(Peak(cue), Is.EqualTo(0f));
+        }
+
+        [Test]
+        public void SplitCuePutsTheCueLeftAndTheMasterRight()
+        {
+            var master = new MasterBus(SampleRate, Channels) { TargetGain = 1f };
+            var mix = new float[BlockFrames * Channels];
+            var cue = new float[BlockFrames * Channels];
+
+            for (var i = 0; i < 10; i++)
+            {
+                for (var s = 0; s < mix.Length; s++)
+                {
+                    mix[s] = 0.4f;
+                    cue[s] = -0.6f;
+                }
+
+                master.Process(mix, cue, Channels);
+            }
+
+            // Left carries the cue, right carries the master.
+            Assert.That(mix[0], Is.EqualTo(-0.6f).Within(1e-2f));
+            Assert.That(mix[1], Is.EqualTo(0.4f).Within(1e-2f));
+        }
+
+        [Test]
+        public void SplitCueIsNotAppliedWhenNothingIsCued()
+        {
+            var master = new MasterBus(SampleRate, Channels) { TargetGain = 1f };
+            var mix = new float[BlockFrames * Channels];
+
+            for (var i = 0; i < 10; i++)
+            {
+                for (var s = 0; s < mix.Length; s++)
+                {
+                    mix[s] = 0.4f;
+                }
+
+                master.Process(mix, null, Channels);
+            }
+
+            Assert.That(mix[0], Is.EqualTo(0.4f).Within(1e-2f));
+            Assert.That(mix[1], Is.EqualTo(0.4f).Within(1e-2f));
+        }
+
+        [Test]
+        public void TheRecordingCapturesTheMasterNotTheCue()
+        {
+            // What was recorded must be what the audience heard, not what was in the
+            // headphones.
+            using var stream = new MemoryStream();
+            var recorder = new WavRecorder();
+            recorder.Start(stream, SampleRate, Channels);
+
+            var master = new MasterBus(SampleRate, Channels) { TargetGain = 1f, Recorder = recorder };
+            var mix = new float[BlockFrames * Channels];
+            var cue = new float[BlockFrames * Channels];
+
+            for (var i = 0; i < 40; i++)
+            {
+                for (var s = 0; s < mix.Length; s++)
+                {
+                    mix[s] = 0.25f;
+                    cue[s] = -0.9f;
+                }
+
+                master.Process(mix, cue, Channels);
+                recorder.Drain();
+            }
+
+            recorder.Stop();
+            var bytes = stream.ToArray();
+
+            // Every recorded sample should be near the master level and positive; the cue was
+            // loud and negative, so its presence would be obvious.
+            var negatives = 0;
+            for (var offset = WavHeader.HeaderSize; offset + 1 < bytes.Length; offset += 2)
+            {
+                var value = (short)(bytes[offset] | (bytes[offset + 1] << 8));
+                if (value < -1000)
+                {
+                    negatives++;
+                }
+            }
+
+            Assert.That(negatives, Is.EqualTo(0), "the cue bus leaked into the recording");
         }
 
         // ------------------------------------------------------------------ master
@@ -382,8 +529,8 @@ namespace AIDeck.Tests.EditMode.Core
             for (var i = 0; i < 100; i++)
             {
                 Array.Clear(mix, 0, mix.Length);
-                a.RenderInto(mix, Channels, SampleRate);
-                b.RenderInto(mix, Channels, SampleRate);
+                a.RenderInto(mix, null, Channels, SampleRate);
+                b.RenderInto(mix, null, Channels, SampleRate);
                 master.Process(mix, Channels);
                 recorder.Drain();
             }

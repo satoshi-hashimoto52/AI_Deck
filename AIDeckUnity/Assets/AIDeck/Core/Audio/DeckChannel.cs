@@ -42,6 +42,7 @@ namespace AIDeck.Core.Audio
         private volatile float _filterKnob;
         private volatile bool _echoEnabled;
         private volatile bool _muted;
+        private volatile bool _cueEnabled;
 
         /// <summary>Set by the main thread to force an instant de-click ramp from silence.</summary>
         private int _restartFade;
@@ -95,6 +96,19 @@ namespace AIDeck.Core.Audio
             set => _muted = value;
         }
 
+        /// <summary>
+        /// Send this deck to the cue bus (§5.4).
+        ///
+        /// The cue send is taken **before** the channel fader, the crossfader and MUTE — that
+        /// is what "pre-fade listen" means, and it is the whole point: a DJ cues a track in
+        /// order to hear it while it is still faded out of the mix.
+        /// </summary>
+        public bool CueEnabled
+        {
+            get => _cueEnabled;
+            set => _cueEnabled = value;
+        }
+
         /// <summary>Allocates the DSP objects for a device format. Main thread only.</summary>
         public void Prepare(int sampleRate, int channels)
         {
@@ -137,9 +151,10 @@ namespace AIDeck.Core.Audio
         public void RequestFadeIn() => Interlocked.Exchange(ref _restartFade, 1);
 
         /// <summary>
-        /// Audio thread. Renders this deck and adds it into <paramref name="mix"/>.
+        /// Audio thread. Renders this deck and adds it into <paramref name="mix"/>, and — when
+        /// this deck is cued — its pre-fader signal into <paramref name="cueMix"/>.
         /// </summary>
-        public void RenderInto(float[] mix, int channels, int sampleRate)
+        public void RenderInto(float[] mix, float[] cueMix, int channels, int sampleRate)
         {
             if (mix == null || _filter == null || channels < 1)
             {
@@ -176,6 +191,23 @@ namespace AIDeck.Core.Audio
             if (step == _loopFadeStep)
             {
                 _currentGain = 0f;
+            }
+
+            // Pre-fade listen: taken here, after the filter and echo but before any gain, so
+            // the cue is unaffected by the fader position or by MUTE.
+            var cueing = _cueEnabled && cueMix != null && cueMix.Length == _scratch.Length;
+            if (cueing)
+            {
+                for (var i = 0; i < _scratch.Length; i++)
+                {
+                    var sample = _scratch[i];
+                    if (float.IsNaN(sample) || float.IsInfinity(sample))
+                    {
+                        sample = 0f;
+                    }
+
+                    cueMix[i] += sample;
+                }
             }
 
             var frames = _scratch.Length / channels;
