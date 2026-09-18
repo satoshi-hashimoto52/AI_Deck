@@ -243,6 +243,62 @@ namespace AIDeck.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator MouseInputIsIgnoredWhileTheApplicationIsUnfocused()
+        {
+            // The host runs with runInBackground on, so a DJ set does not stop when the window
+            // loses focus. Unity then keeps reporting the operating system's mouse state while
+            // the user is clicking in another application — and acting on that let a click
+            // meant for something else move a control. Observed on the Mac build as controls
+            // changing on their own.
+            var probe = MakeProbe(10f, 10f, 100f, 100f);
+            yield return null;
+
+            _router.SendMessage("OnApplicationFocus", false, SendMessageOptions.DontRequireReceiver);
+            Assert.That(_router.HasFocus, Is.False);
+
+            // What Update would do with a click belonging to another application.
+            _router.SendMessage("Update", SendMessageOptions.DontRequireReceiver);
+            yield return null;
+
+            Assert.That(probe.Pressed, Is.EqualTo(0), "an unfocused window acted on a mouse click");
+
+            _router.SendMessage("OnApplicationFocus", true, SendMessageOptions.DontRequireReceiver);
+            Assert.That(_router.HasFocus, Is.True);
+        }
+
+        [UnityTest]
+        public IEnumerator LosingFocusStillReleasesWhateverWasHeld()
+        {
+            var probe = MakeProbe(10f, 10f, 100f, 100f);
+            yield return null;
+
+            _router.PointerDown(1, new Vector2(50f, 50f));
+            Assert.That(probe.IsPressed, Is.True);
+
+            _router.SendMessage("OnApplicationFocus", false, SendMessageOptions.DontRequireReceiver);
+
+            Assert.That(probe.Cancelled, Is.EqualTo(1), "a held control must not survive losing focus");
+            Assert.That(probe.Released, Is.EqualTo(0), "losing focus is not a completed click");
+            Assert.That(_router.ActivePointerCount, Is.EqualTo(0));
+        }
+
+        [UnityTest]
+        public IEnumerator InjectedPointersStillWorkWhileUnfocused()
+        {
+            // The gate is on the OS mouse path only. Tests and the network layer deliver
+            // pointers directly and must keep working.
+            var probe = MakeProbe(10f, 10f, 100f, 100f);
+            yield return null;
+
+            _router.SendMessage("OnApplicationFocus", false, SendMessageOptions.DontRequireReceiver);
+            _router.PointerDown(1, new Vector2(50f, 50f));
+            _router.PointerUp(1, new Vector2(50f, 50f));
+
+            Assert.That(probe.Pressed, Is.EqualTo(1));
+            Assert.That(probe.Released, Is.EqualTo(1));
+        }
+
+        [UnityTest]
         public IEnumerator ForceReleaseCancelsWithoutAPointerEvent()
         {
             var probe = MakeProbe(10f, 10f, 100f, 100f);

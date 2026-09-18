@@ -48,6 +48,21 @@ namespace AIDeck.UI
         /// <summary>The camera the canvas renders with, or null for Screen Space - Overlay.</summary>
         public Camera UiCamera { get; set; }
 
+        /// <summary>
+        /// Whether the application currently has keyboard/mouse focus.
+        ///
+        /// The host runs with <c>runInBackground</c> on, because a DJ set must not stop when
+        /// the window loses focus. The side effect is that Unity keeps calling Update — and
+        /// keeps reporting the operating system's mouse state — while the user is clicking in
+        /// some *other* application. Acting on that would let a click meant for a text editor
+        /// move a crossfader, which is exactly what was observed: controls changing on their
+        /// own while the window sat in the background.
+        ///
+        /// Touches are not gated: an unfocused iOS app does not receive any, and backgrounding
+        /// is handled by <see cref="OnApplicationPause"/>.
+        /// </summary>
+        public bool HasFocus { get; private set; } = true;
+
         /// <summary>Number of fingers currently holding a widget. Shown in diagnostics.</summary>
         public int ActivePointerCount => _captured.Count;
 
@@ -69,6 +84,8 @@ namespace AIDeck.UI
             _targets.Remove(target);
             CancelCapturesFor(target);
         }
+
+        private void OnEnable() => HasFocus = Application.isFocused;
 
         private void Update()
         {
@@ -114,6 +131,12 @@ namespace AIDeck.UI
             // The Mac host is driven with a mouse; the same widgets serve both, so the mouse
             // is fed through as one extra pointer rather than duplicated in a second path.
             if (Input.touchCount > 0)
+            {
+                return;
+            }
+
+            // A click aimed at another application is not a click on this one.
+            if (!HasFocus)
             {
                 return;
             }
@@ -313,6 +336,8 @@ namespace AIDeck.UI
 
         private void OnApplicationFocus(bool focused)
         {
+            HasFocus = focused;
+
             if (!focused)
             {
                 CancelAll();

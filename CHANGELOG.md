@@ -30,6 +30,14 @@ Requirement IDs refer to
   It does not disturb the touch router, which reads input directly and never consults the event
   system, and every graphic except the fields' own backgrounds has ray casting off.
 
+* **The window acted on clicks aimed at other applications.** The host runs with
+  `runInBackground` on, because a DJ set must not stop when the window loses focus. Unity then
+  keeps calling `Update` and keeps reporting the operating system's mouse state, and the touch
+  router acted on it — so a click meant for another app could move a control. Observed on the
+  Mac build as controls changing on their own. The router now ignores the mouse path unless the
+  application has focus; pointers injected directly (tests, and the network layer) are
+  unaffected, and losing focus still cancels whatever was held.
+
 ### Added — Phase 5 diagnostics
 
 * `HostPlayModeTests`: presses the real buttons in the real `HostApp` and asserts the deck,
@@ -42,7 +50,7 @@ Requirement IDs refer to
   state — each logged once, so the absence of a line localises a break in the chain. It is
   mirrored to Unity's log via `UnityLogBridge`, because an in-memory log cannot be read off a
   shipped `.app`.
-* Tests: EditMode 332, PlayMode 68 (+1 opt-in soak), 0 failures.
+* Tests: EditMode 332, PlayMode 71 (+1 opt-in soak), 0 failures.
 
 ### Added — Phase 4: builds and quality (2026-09-18)
 
