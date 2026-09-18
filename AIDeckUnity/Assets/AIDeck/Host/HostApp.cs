@@ -89,8 +89,9 @@ namespace AIDeck.Host
             _settingsStore = new SettingsStore(_log, SettingsPathOverride);
             _settings = _settingsStore.Load();
 
-            // Said once at startup: when the library comes back empty the first question is
-            // always which folder it was read from, and that has changed under the app before.
+            // Said once at startup: which source this player was built from, and where its
+            // data lives. Both questions have had wrong answers assumed about them.
+            _log.Info("Build", BuildStamp.Summary);
             _log.Info("Storage", $"Data folder: {AppPaths.ForDisplay(AppPaths.DataFolder)}");
 
             _libraryStore = new LibraryStore(_log, LibraryPathOverride);

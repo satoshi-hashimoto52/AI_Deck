@@ -211,17 +211,18 @@ namespace AIDeck.UI
         /// Applied to the root content rect, so every control inside it is automatically clear
         /// of the rounded corners and the home indicator without each widget knowing about them.
         /// </summary>
-        public static void ApplySafeArea(RectTransform rect)
-        {
-            if (rect == null)
-            {
-                return;
-            }
+        public static void ApplySafeArea(RectTransform rect) =>
+            ApplySafeArea(rect, Screen.safeArea, Screen.width, Screen.height);
 
-            var safe = Screen.safeArea;
-            var width = Screen.width;
-            var height = Screen.height;
-            if (width <= 0 || height <= 0)
+        /// <summary>
+        /// The same inset from explicit values, so the arithmetic can be checked against a real
+        /// iPad mini landscape safe area without a device. <c>Screen</c> cannot be driven from a
+        /// test, and getting this wrong moves every control — including the jog wheels — away
+        /// from where the finger lands.
+        /// </summary>
+        public static void ApplySafeArea(RectTransform rect, Rect safe, int width, int height)
+        {
+            if (rect == null || width <= 0 || height <= 0)
             {
                 return;
             }

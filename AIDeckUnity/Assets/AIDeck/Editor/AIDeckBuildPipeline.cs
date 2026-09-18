@@ -133,6 +133,79 @@ namespace AIDeck.Editor
             // Audio must keep running when the window loses focus; a DJ set does not stop
             // because the user clicked something else (NFR-005).
             PlayerSettings.runInBackground = true;
+
+            WriteBuildStamp();
+        }
+
+        /// <summary>Where the build stamp resource is written, relative to the project.</summary>
+        public const string BuildStampAssetPath = "Assets/Resources/aideck-build.txt";
+
+        /// <summary>
+        /// Records the commit and the time this player was built.
+        ///
+        /// An iPad build is generated here, then opened in Xcode, signed and installed by
+        /// hand, so a stale export sits on the device looking exactly like a current one —
+        /// which is how an export from before four fixes came back as an input bug. The stamp
+        /// travels inside the player so the question can be answered from the running app
+        /// rather than from the dates on a folder.
+        /// </summary>
+        private static void WriteBuildStamp()
+        {
+            var contents =
+                "commit=" + ShortCommit() + "\n" +
+                "builtUtc=" + DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm") + "\n";
+
+            var full = Path.Combine(Directory.GetCurrentDirectory(), BuildStampAssetPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(full));
+            File.WriteAllText(full, contents);
+            AssetDatabase.ImportAsset(BuildStampAssetPath, ImportAssetOptions.ForceUpdate);
+
+            Debug.Log($"[AI Deck] Build stamp: commit {ShortCommit()}, protocol v{Core.Net.ProtocolInfo.Version}.");
+        }
+
+        /// <summary>
+        /// The short hash of HEAD, with <c>-dirty</c> appended when the tree has uncommitted
+        /// changes — a build from a dirty tree is not the commit it names, and saying so is the
+        /// whole point of the stamp.
+        /// </summary>
+        private static string ShortCommit()
+        {
+            var head = Git("rev-parse --short HEAD");
+            if (string.IsNullOrEmpty(head))
+            {
+                return "unknown";
+            }
+
+            return string.IsNullOrEmpty(Git("status --porcelain")) ? head : head + "-dirty";
+        }
+
+        private static string Git(string arguments)
+        {
+            try
+            {
+                var process = new System.Diagnostics.Process
+                {
+                    StartInfo = new System.Diagnostics.ProcessStartInfo("git", arguments)
+                    {
+                        WorkingDirectory = Directory.GetCurrentDirectory(),
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    }
+                };
+
+                process.Start();
+                var output = process.StandardOutput.ReadToEnd().Trim();
+                process.WaitForExit(5000);
+                return process.ExitCode == 0 ? output : string.Empty;
+            }
+            catch (Exception exception)
+            {
+                // A build without git is still a build; it just cannot name its commit.
+                Debug.LogWarning($"[AI Deck] Could not read the git commit: {exception.Message}");
+                return string.Empty;
+            }
         }
 
         /// <summary>

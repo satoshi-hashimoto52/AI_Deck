@@ -13,6 +13,29 @@
 * iPad mini running iPadOS 15.0 or later
 * A USB cable, or the iPad paired for wireless development
 
+## Before anything: regenerate after every code change
+
+The Xcode project is **generated**, and a generated project is not rebuilt because the source
+changed. Both of these are easy to do and neither reports anything wrong:
+
+* rebuilding only the Mac app after a fix and installing yesterday's iPad build;
+* pressing ▶ in Xcode, which rebuilds the *Xcode* project from the C++ Unity exported last
+  time — not from the current C# .
+
+That happened. An export made before four fixes stayed on the iPad, and the missing jog
+behaviour read as a touch-input bug on iOS. **Run Step 1 again after every code change**, then
+build in Xcode.
+
+To check what is actually on the device, look at the bottom of the iPad's connect screen, or
+the first lines of the log:
+
+```
+[AI Deck] Build: v1.0 · commit dd55743 · built 2026-09-18 11:40 UTC · protocol v1
+```
+
+`unknown` means the player was run from the editor. A commit ending in `-dirty` means it was
+built from a tree with uncommitted changes, so it is not exactly the commit it names.
+
 ## Step 1 — generate the Xcode project (automated)
 
 ```bash

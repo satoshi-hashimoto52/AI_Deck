@@ -98,3 +98,8 @@ Icon
 /TestResults/
 /[Cc]overage[Rr]esults/
 *.trx
+
+# Written by the build pipeline on every build; it names the commit, so committing it
+# would either be stale or churn on every build.
+AIDeckUnity/Assets/Resources/aideck-build.txt
+AIDeckUnity/Assets/Resources/aideck-build.txt.meta

@@ -285,15 +285,46 @@ namespace AIDeck.Controller
         public void JogNudge(DeckId deck, float amount) =>
             _session.Send(MessageType.JogNudge, deck, Messages.Float(amount));
 
-        public void ScratchBegin(DeckId deck) => _session.Send(MessageType.ScratchBegin, deck);
+        /// <summary>
+        /// Per-deck tally of one scratch gesture, reported once when it ends.
+        ///
+        /// The controller and the host each log their own count of the same gesture, so a jog
+        /// that does nothing can be placed on one side of the wire or the other from the two
+        /// logs alone. Logging each step would be one line per frame on both.
+        /// </summary>
+        private readonly int[] _scratchSent = new int[2];
+
+        private readonly float[] _scratchSeconds = new float[2];
+
+        public void ScratchBegin(DeckId deck)
+        {
+            var index = (int)deck;
+            _scratchSent[index] = 0;
+            _scratchSeconds[index] = 0f;
+            _log?.Info("Net", $"Sending scratch for deck {deck.ToDisplayName()}.");
+            _session.Send(MessageType.ScratchBegin, deck);
+        }
 
         public void ScratchUpdate(DeckId deck, float rate) =>
             _session.Send(MessageType.ScratchUpdate, deck, Messages.Float(rate));
 
-        public void ScratchMove(DeckId deck, float seconds) =>
+        public void ScratchMove(DeckId deck, float seconds)
+        {
+            var index = (int)deck;
+            _scratchSent[index]++;
+            _scratchSeconds[index] += seconds;
             _session.Send(MessageType.ScratchMove, deck, Messages.Float(seconds));
+        }
 
-        public void ScratchEnd(DeckId deck) => _session.Send(MessageType.ScratchEnd, deck);
+        public void ScratchEnd(DeckId deck)
+        {
+            var index = (int)deck;
+            _log?.Info(
+                "Net",
+                $"Sent scratch for deck {deck.ToDisplayName()}: {_scratchSent[index]} moves, " +
+                $"{_scratchSeconds[index]:F2} s.");
+            _session.Send(MessageType.ScratchEnd, deck);
+        }
         public void Brake(DeckId deck) => _session.Send(MessageType.Brake, deck);
         public void Backspin(DeckId deck) => _session.Send(MessageType.Backspin, deck);
 

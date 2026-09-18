@@ -51,6 +51,7 @@ namespace AIDeck.Controller
 
             // Same reason as the host: an in-memory log cannot be read off an installed app.
             _logBridge = new UnityLogBridge(_log);
+            _log.Info("Build", BuildStamp.Summary);
 
             // The store is injectable so the tests do not write into the real settings file.
             // A test that remembers an address the user never typed would leave the app trying

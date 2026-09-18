@@ -133,14 +133,25 @@ namespace AIDeck.UI
             _mark.localRotation = Quaternion.Euler(0f, 0f, _markAngle);
         }
 
+        /// <summary>Audio seconds this gesture has asked for, for the one line logged at its end.</summary>
+        private float _gestureSeconds;
+
+        private int _gestureSteps;
+
         protected override void OnPressed(Vector2 screenPosition)
         {
             _lastAngle = AngleAt(screenPosition);
             _smoothedRate = 0f;
             _lastMoveFrame = Time.frameCount;
+            _gestureSeconds = 0f;
+            _gestureSteps = 0;
 
             // Anywhere on the disc takes hold of the audio.
             _scratching = true;
+
+            // Start and end only: the steps between them are one per frame, and the question
+            // a log answers is whether the gesture began at all and what it asked for.
+            Router?.Log?.Info("Jog", $"Deck {_deck} scratch began at {ToLocal(screenPosition)}.");
             ScratchBegan?.Invoke();
             ScratchRateChanged?.Invoke(0f);
 
@@ -180,7 +191,10 @@ namespace AIDeck.UI
 
             // One revolution is SecondsPerRevolution of audio, so a step of the gesture is
             // exactly this much of the track, whatever the frame rate happened to be.
-            ScratchMoved?.Invoke(AudioSafety.Sanitize(audioSeconds, -MaxStepSeconds, MaxStepSeconds, 0f));
+            var step = AudioSafety.Sanitize(audioSeconds, -MaxStepSeconds, MaxStepSeconds, 0f);
+            _gestureSeconds += step;
+            _gestureSteps++;
+            ScratchMoved?.Invoke(step);
         }
 
         /// <summary>
@@ -221,6 +235,8 @@ namespace AIDeck.UI
 
             _scratching = false;
             _lastMoveFrame = -1;
+            Router?.Log?.Info(
+                "Jog", $"Deck {_deck} scratch ended: {_gestureSteps} steps, {_gestureSeconds:F2} s.");
             ScratchEnded?.Invoke();
         }
 

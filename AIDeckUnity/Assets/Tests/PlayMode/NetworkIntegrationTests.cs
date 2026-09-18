@@ -457,5 +457,135 @@ namespace AIDeck.Tests.PlayMode
             Assert.That(_engine.DeckA.IsPlaying, Is.False,
                 "the default disconnect policy is the safe stop (§9)");
         }
+
+        // ------------------------------------------------------- the jog, end to end (FR-036)
+
+        /// <summary>Dispatches scratch messages exactly as <c>HostNetworkBridge</c> does.</summary>
+        private void RouteScratchMessages()
+        {
+            _session.CommandReceived += message =>
+            {
+                var deck = message.Deck ?? DeckId.A;
+                switch (message.Type)
+                {
+                    case MessageType.LoadTrack:
+                        _commands.LoadTrack(deck, Messages.ReadText(message));
+                        break;
+                    case MessageType.ScratchBegin:
+                        _commands.ScratchBegin(deck);
+                        break;
+                    case MessageType.ScratchMove:
+                        _commands.ScratchMove(deck, Messages.ReadFloat(message));
+                        break;
+                    case MessageType.ScratchEnd:
+                        _commands.ScratchEnd(deck);
+                        break;
+                }
+            };
+        }
+
+        [UnityTest]
+        public IEnumerator AScratchFromTheControllerMovesTheHostDeck()
+        {
+            // The whole jog path over a real socket: NetworkBackend encodes, the fast channel
+            // carries it, the host decodes and the audio engine moves. The iPad's jog doing
+            // nothing is indistinguishable from any one of these links being absent.
+            Assert.That(MessageType.ScratchMove.Channel(), Is.EqualTo(MessageChannel.Fast),
+                "a per-frame gesture message must not queue behind reliable traffic");
+
+            RouteScratchMessages();
+
+            var backend = new NetworkBackend();
+            try
+            {
+                backend.Connect("127.0.0.1", TcpPort);
+                yield return Pump(10f, () =>
+                {
+                    backend.Tick(Time.unscaledDeltaTime);
+                    return _session.IsControllerConnected && backend.State == ConnectionState.Connected;
+                });
+
+                Assert.That(_session.IsControllerConnected, Is.True, "host: " + _session.StatusText);
+                Assert.That(backend.State, Is.EqualTo(ConnectionState.Connected),
+                    "controller: " + backend.StatusText);
+
+                backend.Commands.LoadTrack(DeckId.A, _track.Id);
+                yield return Pump(15f, () =>
+                {
+                    backend.Tick(Time.unscaledDeltaTime);
+                    return _engine.DeckA.Transport.State == DeckPlaybackState.Paused;
+                });
+
+                Assert.That(_engine.DeckA.Transport.State, Is.EqualTo(DeckPlaybackState.Paused),
+                    "load failed: " + _engine.DeckA.Transport.ErrorReason);
+
+                var before = _engine.DeckA.PositionSeconds;
+
+                backend.Commands.ScratchBegin(DeckId.A);
+                for (var i = 0; i < 8; i++)
+                {
+                    backend.Commands.ScratchMove(DeckId.A, 0.1f);
+                }
+
+                yield return Pump(4f, () =>
+                {
+                    backend.Tick(Time.unscaledDeltaTime);
+                    return _engine.DeckA.PositionSeconds >= before + 0.75d;
+                });
+
+                Assert.That(_engine.DeckA.PositionSeconds, Is.GreaterThan(before + 0.5d),
+                    "the controller's platter displacement never reached the audio engine");
+
+                backend.Commands.ScratchEnd(DeckId.A);
+                yield return Pump(2f, () =>
+                {
+                    backend.Tick(Time.unscaledDeltaTime);
+                    return _engine.DeckA.Motion.Mode == MotionMode.Normal;
+                });
+
+                Assert.That(_engine.DeckA.Motion.Mode, Is.EqualTo(MotionMode.Normal),
+                    "the deck stayed under the gesture after the finger lifted");
+            }
+            finally
+            {
+                backend.Dispose();
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator APeerSpeakingAnotherProtocolVersionIsRefusedWithAnExplanation()
+        {
+            // FR-068. A controller built from older sources must be told so, not left
+            // half-working — which is exactly the shape of the failure that a stale iPad build
+            // produces, and the reason this check exists at all.
+            const ushort OtherVersion = 99;
+            Assert.That(ProtocolInfo.IsCompatible(OtherVersion), Is.False);
+
+            var notices = new List<string>();
+            _session.Notice += notices.Add;
+
+            // The refusal reaches the host as the link's close reason, which is what the user
+            // is shown when the other device goes away.
+            _session.ControllerDisconnected += notices.Add;
+
+            using (var client = new System.Net.Sockets.TcpClient())
+            {
+                client.Connect("127.0.0.1", TcpPort);
+
+                var frame = MessageCodec.Encode(new NetMessage(
+                    MessageType.Hello, null, 1, 0, null, OtherVersion));
+                client.GetStream().Write(frame, 0, frame.Length);
+
+                yield return Pump(4f, () => !_session.IsControllerConnected && notices.Count > 0);
+            }
+
+            var joined = string.Join(" | ", notices);
+            Assert.That(joined, Does.Contain("protocol"),
+                "a peer with an unusable protocol version was not reported: " + joined);
+            Assert.That(joined, Does.Contain(OtherVersion.ToString()),
+                "the message does not say which version the other device speaks: " + joined);
+            Assert.That(_session.IsControllerConnected, Is.False,
+                "an incompatible peer was left connected");
+        }
     }
 }

@@ -127,7 +127,7 @@ Exit code 0 means everything passed. Current:
 | Suite | Tests | Passed | Failed |
 | --- | --- | --- | --- |
 | EditMode | 333 | 333 | 0 |
-| PlayMode | 87 | 87 | 0 |
+| PlayMode | 98 | 98 | 0 |
 | 30-minute soak (opt-in) | 1 | 1 | 0 |
 
 The soak is opt-in through `AIDECK_SOAK_MINUTES`; without it that one test reports *ignored*,

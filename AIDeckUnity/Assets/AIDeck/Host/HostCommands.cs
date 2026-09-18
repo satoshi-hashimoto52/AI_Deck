@@ -144,13 +144,52 @@ namespace AIDeck.Host
 
         public void JogNudge(DeckId deck, float amount) => _engine.Deck(deck).Motion.Nudge(amount);
 
-        public void ScratchBegin(DeckId deck) => _engine.Deck(deck).Motion.BeginScratch();
+        public void ScratchBegin(DeckId deck)
+        {
+            var index = (int)deck;
+            _scratchSteps[index] = 0;
+            _scratchApplied[index] = 0;
+            _scratchSeconds[index] = 0f;
+            _log?.Info("Command", $"ScratchBegin deck {deck.ToDisplayName()}.");
+            _engine.Deck(deck).Motion.BeginScratch();
+        }
 
         public void ScratchUpdate(DeckId deck, float rate) => _engine.Deck(deck).Motion.UpdateScratch(rate);
 
-        public void ScratchMove(DeckId deck, float seconds) => _engine.ScrubBy(deck, seconds);
+        /// <summary>
+        /// Per-deck tally of one scratch gesture, reported in a single line when it ends.
+        ///
+        /// Logging each step would be one line per frame. What a stuck jog needs answered is
+        /// whether the steps arrived at all and whether the engine acted on them, and that is
+        /// two numbers.
+        /// </summary>
+        private readonly int[] _scratchSteps = new int[2];
 
-        public void ScratchEnd(DeckId deck) => _engine.Deck(deck).Motion.EndScratch();
+        private readonly int[] _scratchApplied = new int[2];
+
+        private readonly float[] _scratchSeconds = new float[2];
+
+        public void ScratchMove(DeckId deck, float seconds)
+        {
+            var index = (int)deck;
+            _scratchSteps[index]++;
+            _scratchSeconds[index] += seconds;
+
+            if (_engine.ScrubBy(deck, seconds))
+            {
+                _scratchApplied[index]++;
+            }
+        }
+
+        public void ScratchEnd(DeckId deck)
+        {
+            var index = (int)deck;
+            _log?.Info(
+                "Command",
+                $"ScratchEnd deck {deck.ToDisplayName()}: {_scratchSteps[index]} moves, " +
+                $"{_scratchApplied[index]} applied, {_scratchSeconds[index]:F2} s.");
+            _engine.Deck(deck).Motion.EndScratch();
+        }
 
         public void Brake(DeckId deck) => _engine.Deck(deck).Motion.StartBrake();
 

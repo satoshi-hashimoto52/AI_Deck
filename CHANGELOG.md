@@ -74,6 +74,20 @@ Requirement IDs refer to
   a jog drag on deck A. A mouse button that was already held when focus arrived is now ignored
   until it is released.
 
+* **The iPad's jog wheels did nothing.** Every other control worked: discovery, connection,
+  the library, loading a deck, the waveform, buttons and faders. The build on the iPad was an
+  Xcode export generated at 04:50, before Phase 4 and before all three Phase 5 fixes — it
+  contains `JogNudge` but no `ScratchMove`, no `ScrubBy`, no `EventSystem` and no
+  `PointerSource`. It was the Phase 3 jog, which only responded to the inner 62 % of the disc
+  and measured its angle about the corner of the wheel: exactly the Mac symptom, fixed in
+  `dd55743` and never rebuilt for iOS. **Root cause: a stale export, not iOS input.**
+
+  So that this cannot happen silently again, every player now carries the commit it was built
+  from. `AIDeckBuildPipeline` writes the short git hash — with `-dirty` when the tree had
+  uncommitted changes — and the build time into a resource, and `BuildStamp` reads it back.
+  The host and the controller log it as their first line, and the controller's connect screen
+  shows it under the address field, because the iPad is the device you cannot check from here.
+
 ### Added — Phase 5 diagnostics
 
 * `HostPlayModeTests`: presses the real buttons in the real `HostApp` and asserts the deck,
@@ -99,7 +113,19 @@ Requirement IDs refer to
   because of what the operating system reports around a focus change, and `Input` cannot be
   driven from a test. A test's frames are logged as `Injected` and can never be mistaken for a
   real mouse.
-* Tests: EditMode 333, PlayMode 87 (+1 opt-in soak), 0 failures.
+* A **gesture trail through the jog**, start and end only: the touch count when it changes,
+  the pointer down and up with source, position and widget, the scratch beginning and ending
+  with the number of steps and the seconds they asked for, and the same two numbers again on
+  the controller's send side and the host's receive side. A jog that does nothing can be
+  placed on one side of the wire or the other from the two logs alone. There is no per-frame
+  line anywhere in it.
+* `TouchRouter.ProcessTouchState` makes the touch path testable the way `ProcessMouseState`
+  made the mouse path testable: a phase, a finger id and a position in, a captured widget out
+  — the same conversion `Update` feeds from `Input.touches`. The older tests called
+  `PointerDown` directly, which skips exactly the step an iPad-only failure would live in.
+* `UiFactory.ApplySafeArea` takes explicit values in a second overload, so the inset can be
+  checked against a real iPad mini landscape safe area without a device.
+* Tests: EditMode 333, PlayMode 98 (+1 opt-in soak), 0 failures.
 
 ### Added — Phase 4: builds and quality (2026-09-18)
 

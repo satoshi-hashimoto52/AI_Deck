@@ -428,5 +428,295 @@ namespace AIDeck.Tests.PlayMode
             var centre = (corners[0] + corners[2]) * 0.5f;
             return new Vector2(centre.x, centre.y);
         }
+
+        // ------------------------------------------------------------- touch input (FR-071)
+        //
+        // These go through TouchRouter.ProcessTouchState, which is the same conversion
+        // Update() feeds from Input.touches: a phase, a finger id and a screen position in,
+        // a captured widget out. Calling PointerDown directly — as the older tests do —
+        // skips exactly the step an iPad-only failure would live in.
+
+        private JogWidget Jog(DeckId deck)
+        {
+            var panel = deck == DeckId.A ? _app.Screen.DeckA : _app.Screen.DeckB;
+            return panel.GetComponentInChildren<JogWidget>(true);
+        }
+
+        /// <summary>Screen point on the jog's circle at <paramref name="degrees"/>, 0° = right.</summary>
+        private static Vector2 PointOnJog(JogWidget jog, float degrees, float radiusFraction = 0.8f)
+        {
+            var corners = new Vector3[4];
+            jog.Rect.GetWorldCorners(corners);
+            var centre = (Vector2)((corners[0] + corners[2]) * 0.5f);
+            var radius = Mathf.Min(corners[2].x - corners[0].x, corners[2].y - corners[0].y) * 0.5f;
+            return centre + new Vector2(Mathf.Cos(degrees * Mathf.Deg2Rad), Mathf.Sin(degrees * Mathf.Deg2Rad))
+                   * radius * radiusFraction;
+        }
+
+        private int Count(string call)
+        {
+            var n = 0;
+            foreach (var entry in _backend.Calls)
+            {
+                if (entry == call)
+                {
+                    n++;
+                }
+            }
+
+            return n;
+        }
+
+        [UnityTest]
+        public IEnumerator ATouchThatBeginsOnTheJogDrivesTheDeck()
+        {
+            _backend.Current = PopulatedSnapshot();
+            yield return null;
+
+            var router = _app.Screen.Router;
+            var jog = Jog(DeckId.A);
+            Assert.That(jog, Is.Not.Null, "deck A has no jog wheel");
+
+            router.ProcessTouchState(0, TouchPhase.Began, PointOnJog(jog, 90f));
+            yield return null;
+
+            Assert.That(jog.IsScratching, Is.True, "a real touch did not take hold of the platter");
+            Assert.That(_backend.Calls, Does.Contain("ScratchBegin:A"));
+
+            for (var i = 1; i <= 6; i++)
+            {
+                router.ProcessTouchState(0, TouchPhase.Moved, PointOnJog(jog, 90f - 30f * i));
+                yield return null;
+            }
+
+            Assert.That(Count("ScratchMove:A"), Is.GreaterThan(0),
+                "turning the platter sent no displacement to the host");
+
+            router.ProcessTouchState(0, TouchPhase.Ended, PointOnJog(jog, -90f));
+            yield return null;
+
+            Assert.That(jog.IsScratching, Is.False);
+            Assert.That(_backend.Calls, Does.Contain("ScratchEnd:A"));
+        }
+
+        [UnityTest]
+        public IEnumerator TheGestureKeepsItsFingerIdThroughEveryPhase()
+        {
+            _backend.Current = PopulatedSnapshot();
+            yield return null;
+
+            var router = _app.Screen.Router;
+            var jog = Jog(DeckId.A);
+
+            router.ProcessTouchState(7, TouchPhase.Began, PointOnJog(jog, 0f));
+            yield return null;
+            Assert.That(router.IsCaptured(7), Is.True);
+
+            // A finger resting still is still holding the platter.
+            router.ProcessTouchState(7, TouchPhase.Stationary, PointOnJog(jog, 0f));
+            yield return null;
+            Assert.That(jog.IsScratching, Is.True, "a stationary finger dropped the platter");
+
+            // A different finger lifting elsewhere must not end this gesture.
+            router.ProcessTouchState(8, TouchPhase.Ended, PointOnJog(jog, 180f));
+            yield return null;
+            Assert.That(jog.IsScratching, Is.True, "another finger's release ended this gesture");
+
+            router.ProcessTouchState(7, TouchPhase.Moved, PointOnJog(jog, -60f));
+            yield return null;
+            router.ProcessTouchState(7, TouchPhase.Ended, PointOnJog(jog, -60f));
+            yield return null;
+
+            Assert.That(jog.IsScratching, Is.False);
+            Assert.That(router.IsCaptured(7), Is.False);
+        }
+
+        [UnityTest]
+        public IEnumerator TheTwoJogWheelsTakeSeparateFingersAtTheSameTime()
+        {
+            _backend.Current = PopulatedSnapshot();
+            yield return null;
+
+            var router = _app.Screen.Router;
+            var a = Jog(DeckId.A);
+            var b = Jog(DeckId.B);
+
+            router.ProcessTouchState(0, TouchPhase.Began, PointOnJog(a, 90f));
+            router.ProcessTouchState(1, TouchPhase.Began, PointOnJog(b, 90f));
+            yield return null;
+
+            Assert.That(a.IsScratching, Is.True);
+            Assert.That(b.IsScratching, Is.True);
+
+            router.ProcessTouchState(0, TouchPhase.Ended, PointOnJog(a, 90f));
+            yield return null;
+
+            Assert.That(a.IsScratching, Is.False);
+            Assert.That(b.IsScratching, Is.True, "releasing one jog released the other");
+
+            router.ProcessTouchState(1, TouchPhase.Ended, PointOnJog(b, 90f));
+            yield return null;
+            Assert.That(b.IsScratching, Is.False);
+        }
+
+        [UnityTest]
+        public IEnumerator FingerZeroDoesNotCollideWithTheMousePointer()
+        {
+            // The mouse is fed through the same router as an extra pointer. If it shared an id
+            // with the first finger, a touch would cancel the mouse's gesture and vice versa.
+            _backend.Current = PopulatedSnapshot();
+            yield return null;
+
+            Assert.That(TouchRouter.MousePointerId, Is.LessThan(0),
+                "the mouse pointer id must be outside the range iOS gives fingers");
+
+            var router = _app.Screen.Router;
+            var jog = Jog(DeckId.A);
+
+            router.ProcessTouchState(0, TouchPhase.Began, PointOnJog(jog, 90f));
+            yield return null;
+
+            Assert.That(router.IsCaptured(0), Is.True);
+            Assert.That(router.IsCaptured(TouchRouter.MousePointerId), Is.False);
+
+            router.ProcessTouchState(0, TouchPhase.Ended, PointOnJog(jog, 90f));
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator ACancelledTouchDropsThePlatterWithoutActingOnIt()
+        {
+            _backend.Current = PopulatedSnapshot();
+            yield return null;
+
+            var router = _app.Screen.Router;
+            var jog = Jog(DeckId.A);
+
+            router.ProcessTouchState(2, TouchPhase.Began, PointOnJog(jog, 90f));
+            yield return null;
+            router.ProcessTouchState(2, TouchPhase.Canceled, PointOnJog(jog, 90f));
+            yield return null;
+
+            Assert.That(jog.IsScratching, Is.False, "a cancelled touch kept the platter");
+            Assert.That(router.IsCaptured(2), Is.False);
+            Assert.That(_backend.Calls, Does.Contain("ScratchEnd:A"),
+                "a cancelled gesture must still release the deck on the host");
+        }
+
+        [UnityTest]
+        public IEnumerator TheJogIsHitAtTheSamePlaceWhenTheCanvasIsScaled()
+        {
+            // An iPad mini renders at 2x and the canvas scales to its reference resolution, so
+            // every screen point is converted twice before it reaches a widget. The conversion
+            // is by world corners, and this is what proves it stays correct under a scale
+            // factor rather than only at 1:1.
+            _backend.Current = PopulatedSnapshot();
+            yield return null;
+
+            var canvas = _app.Screen.GetComponentInChildren<Canvas>(true);
+            Assert.That(canvas, Is.Not.Null);
+
+            var scaler = canvas.GetComponent<UnityEngine.UI.CanvasScaler>();
+            Assert.That(scaler, Is.Not.Null, "the control surface must scale with the screen");
+
+            scaler.uiScaleMode = UnityEngine.UI.CanvasScaler.ScaleMode.ConstantPixelSize;
+            scaler.scaleFactor = 2f;
+            Canvas.ForceUpdateCanvases();
+            yield return null;
+
+            var router = _app.Screen.Router;
+            var jog = Jog(DeckId.A);
+
+            router.ProcessTouchState(0, TouchPhase.Began, PointOnJog(jog, 90f));
+            yield return null;
+
+            Assert.That(jog.IsScratching, Is.True, "the jog could not be hit at a 2x canvas scale");
+
+            for (var i = 1; i <= 6; i++)
+            {
+                router.ProcessTouchState(0, TouchPhase.Moved, PointOnJog(jog, 90f - 30f * i));
+                yield return null;
+            }
+
+            Assert.That(Count("ScratchMove:A"), Is.GreaterThan(0),
+                "a scaled canvas produced no platter movement");
+
+            router.ProcessTouchState(0, TouchPhase.Ended, PointOnJog(jog, -90f));
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator NothingTransparentCoversTheJogWheels()
+        {
+            // A stray full-screen graphic with ray casting left on would swallow every touch
+            // and look exactly like a dead jog.
+            _backend.Current = PopulatedSnapshot();
+            yield return null;
+
+            var router = _app.Screen.Router;
+
+            foreach (var deck in new[] { DeckId.A, DeckId.B })
+            {
+                var jog = Jog(deck);
+                router.ProcessTouchState(4, TouchPhase.Began, PointOnJog(jog, 45f, 0.95f));
+                yield return null;
+
+                Assert.That(jog.IsScratching, Is.True,
+                    $"something is above deck {deck}'s jog at the edge of the disc");
+
+                router.ProcessTouchState(4, TouchPhase.Ended, PointOnJog(jog, 45f, 0.95f));
+                yield return null;
+            }
+        }
+
+        [Test]
+        public void TheSafeAreaInsetMatchesAnIPadMiniInLandscape()
+        {
+            // FR-075. An iPad mini in landscape keeps the home indicator at the bottom and the
+            // rounded corners at both ends; the content rect is inset by exactly that. Getting
+            // it wrong moves every control away from where the finger lands, which reads as an
+            // input bug rather than a layout one.
+            const int width = 2266;
+            const int height = 1488;
+            var safe = new Rect(59f, 0f, width - 118f, height - 42f);
+
+            var go = new GameObject("SafeAreaProbe", typeof(RectTransform));
+            try
+            {
+                var rect = (RectTransform)go.transform;
+                UiFactory.ApplySafeArea(rect, safe, width, height);
+
+                Assert.That(rect.anchorMin.x, Is.EqualTo(59f / width).Within(1e-5f));
+                Assert.That(rect.anchorMin.y, Is.EqualTo(0f).Within(1e-5f));
+                Assert.That(rect.anchorMax.x, Is.EqualTo((width - 59f) / width).Within(1e-5f));
+                Assert.That(rect.anchorMax.y, Is.EqualTo((height - 42f) / (float)height).Within(1e-5f));
+                Assert.That(rect.offsetMin, Is.EqualTo(Vector2.zero));
+                Assert.That(rect.offsetMax, Is.EqualTo(Vector2.zero));
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+            }
+        }
+
+        [Test]
+        public void ASafeAreaOfTheWholeScreenInsetsNothing()
+        {
+            // A device with no notch reports the full screen, and the layout must be untouched
+            // rather than shifted by a rounding error.
+            var go = new GameObject("SafeAreaProbe", typeof(RectTransform));
+            try
+            {
+                var rect = (RectTransform)go.transform;
+                UiFactory.ApplySafeArea(rect, new Rect(0f, 0f, 1024f, 768f), 1024, 768);
+
+                Assert.That(rect.anchorMin, Is.EqualTo(Vector2.zero));
+                Assert.That(rect.anchorMax, Is.EqualTo(Vector2.one));
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+            }
+        }
     }
 }

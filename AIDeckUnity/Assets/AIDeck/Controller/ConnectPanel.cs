@@ -119,6 +119,12 @@ namespace AIDeck.Controller
             _manualLabel = UiFactory.CreateText("ManualLabel", _card, "or enter the address shown on the Mac",
                 Theme.FontSizeSmall, TextAnchor.MiddleLeft, Theme.TextDim);
 
+            // Which build this is, on the one screen the user always sees before anything
+            // else. An iPad build is installed by hand, so "is this the current one?" has to
+            // be answerable from the device rather than from the dates on a folder here.
+            _buildLabel = UiFactory.CreateText("Build", _card, AIDeck.Platform.BuildStamp.ShortSummary,
+                Theme.FontSizeSmall, TextAnchor.MiddleCenter, Theme.TextDim);
+
             // The sheet sits above everything else on the canvas.
             foreach (var button in _hostButtons)
             {
@@ -130,6 +136,8 @@ namespace AIDeck.Controller
         }
 
         private readonly List<DiscoveredHost> _hosts = new List<DiscoveredHost>();
+
+        private Text _buildLabel;
 
         private void OnHostChosen(int index)
         {
@@ -188,7 +196,7 @@ namespace AIDeck.Controller
             // an empty list.
             var rowsHeight = _hosts.Count * (RowHeight + 6f);
             var cardHeight = pad + 30f + statusHeight + 20f + rowsHeight + 38f + gap
-                             + 18f + Theme.TouchSize + pad;
+                             + 18f + Theme.TouchSize + 20f + pad;
             cardHeight = Mathf.Min(cardHeight, height - 40f);
 
             var cardWidth = Mathf.Min(560f, width - 80f);
@@ -225,6 +233,9 @@ namespace AIDeck.Controller
 
             UiFactory.Place((RectTransform)_addressField.transform, pad, y, inner - 150f, Theme.TouchSize);
             UiFactory.Place(_connectButton.Rect, pad + inner - 142f, y, 142f, Theme.TouchSize);
+            y += Theme.TouchSize + 4f;
+
+            UiFactory.Place(_buildLabel.rectTransform, pad, y, inner, 16f);
         }
 
         /// <summary>Renders the current connection state.</summary>

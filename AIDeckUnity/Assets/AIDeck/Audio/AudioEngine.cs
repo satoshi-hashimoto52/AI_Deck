@@ -405,21 +405,22 @@ namespace AIDeck.Audio
         /// A *playing* deck is deliberately left alone: its rate already moves it, and applying
         /// the displacement as well would advance it twice.
         /// </summary>
-        public void ScrubBy(DeckId deck, float seconds)
+        public bool ScrubBy(DeckId deck, float seconds)
         {
             var model = Deck(deck);
             if (model.IsPlaying || !model.HasTrack || model.Motion.Mode != MotionMode.Scratching)
             {
-                return;
+                return false;
             }
 
             var step = AudioSafety.Sanitize(seconds, -8f, 8f, 0f);
             if (Math.Abs(step) < 1e-7f)
             {
-                return;
+                return false;
             }
 
             model.Seek(model.PositionSeconds + step);
+            return true;
         }
 
         /// <summary>Unloads a deck (recovery path out of an error state).</summary>

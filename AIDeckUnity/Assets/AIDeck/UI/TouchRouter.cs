@@ -151,35 +151,64 @@ namespace AIDeck.UI
             DropStaleCaptures();
         }
 
+        private int _lastTouchCount;
+
         private void ProcessTouches()
         {
             var count = Input.touchCount;
+
+            // Only on a change: this is one line per finger down and one per finger up, and it
+            // is the difference between "the touch never reached Unity" and "it reached Unity
+            // and hit nothing".
+            if (count != _lastTouchCount)
+            {
+                _lastTouchCount = count;
+                Log?.Info("Pointer", $"Touch count {count}.");
+            }
             for (var i = 0; i < count; i++)
             {
                 var touch = Input.GetTouch(i);
                 var id = touch.fingerId;
 
-                switch (touch.phase)
-                {
-                    case TouchPhase.Began:
-                        Begin(id, touch.position, PointerSource.Touch);
-                        break;
+                ProcessTouchState(id, touch.phase, touch.position, PointerSource.Touch);
+            }
+        }
 
-                    case TouchPhase.Moved:
-                    case TouchPhase.Stationary:
-                        Move(id, touch.position);
-                        break;
+        /// <summary>
+        /// Applies one touch's state for this frame.
+        ///
+        /// Public for the same reason as <see cref="ProcessMouseState"/>: <c>Input.touches</c>
+        /// cannot be driven from a test, and the conversion from a phase and a finger id to a
+        /// captured widget is exactly what an iPad jog that does nothing would break in. A test
+        /// leaves <paramref name="source"/> at its default so its touches are logged as
+        /// <see cref="PointerSource.Injected"/>.
+        /// </summary>
+        public void ProcessTouchState(
+            int fingerId,
+            TouchPhase phase,
+            Vector2 position,
+            PointerSource source = PointerSource.Injected)
+        {
+            switch (phase)
+            {
+                case TouchPhase.Began:
+                    Begin(fingerId, position, source);
+                    break;
 
-                    case TouchPhase.Ended:
-                        End(id, touch.position);
-                        break;
+                case TouchPhase.Moved:
+                case TouchPhase.Stationary:
+                    Move(fingerId, position);
+                    break;
 
-                    case TouchPhase.Canceled:
-                        // FR-073: a cancelled pointer is not a release. The widget must drop
-                        // whatever it was doing rather than act on the last known position.
-                        Cancel(id);
-                        break;
-                }
+                case TouchPhase.Ended:
+                    End(fingerId, position);
+                    break;
+
+                case TouchPhase.Canceled:
+                    // FR-073: a cancelled pointer is not a release. The widget must drop
+                    // whatever it was doing rather than act on the last known position.
+                    Cancel(fingerId);
+                    break;
             }
         }
 
@@ -307,6 +336,7 @@ namespace AIDeck.UI
             }
 
             _captured.Remove(id);
+            Log?.Info("Pointer", $"Up id {id} at ({position.x:F0}, {position.y:F0}) from {Describe(target)}.");
             target.OnTouchUp(id, position);
         }
 
@@ -322,11 +352,21 @@ namespace AIDeck.UI
             target.OnTouchCancel(id);
         }
 
-        /// <summary>Name of the widget's object, for the pointer trail. Never a file path.</summary>
+        /// <summary>
+        /// Name of the widget's object with its parent, for the pointer trail — the two jog
+        /// wheels are both called "Jog", and which one was hit is the whole question. Never a
+        /// file path (NFR-012).
+        /// </summary>
         private static string Describe(ITouchTarget target)
         {
             var rect = target?.TouchRect;
-            return rect == null ? target?.GetType().Name ?? "nothing" : rect.name;
+            if (rect == null)
+            {
+                return target?.GetType().Name ?? "nothing";
+            }
+
+            var parent = rect.parent;
+            return parent == null ? rect.name : parent.name + "/" + rect.name;
         }
 
         /// <summary>Topmost enabled target whose rectangle contains the point.</summary>
