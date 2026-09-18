@@ -94,6 +94,10 @@ Icon
 /sandbox/
 /scratch/
 
+# Local AI music generator runtime, model weights and generated validation audio.
+# These are reproducible downloads/runtime outputs and can exceed 10 GB.
+/.aideck-generator/
+
 # Test / coverage artefacts
 /TestResults/
 /[Cc]overage[Rr]esults/
