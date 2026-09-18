@@ -173,6 +173,12 @@ namespace AIDeck.UI
         public void SetWaveform(DeckId deck, WaveformData waveform) =>
             _strips[(int)deck].Wave.SetWaveform(waveform);
 
+        /// <summary>The title currently shown beside a deck's waveform.</summary>
+        public string DeckTitle(DeckId deck) => _strips[(int)deck].Header.text;
+
+        /// <summary>The elapsed-time reading shown beside a deck's waveform.</summary>
+        public string DeckElapsed(DeckId deck) => _strips[(int)deck].Elapsed.text;
+
         public bool HasWaveform(DeckId deck) => _strips[(int)deck].Wave.HasWaveform;
 
         /// <summary>The single status line: connection, recording and device information.</summary>

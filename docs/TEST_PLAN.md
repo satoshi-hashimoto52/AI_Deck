@@ -103,6 +103,11 @@ rather than hanging, and the disconnect policy releasing the platter and stoppin
 deck alone, ejecting, the pause fade, `AllStop`, the default disconnect policy, a recording
 failure not disturbing playback, and shutdown leaving nothing playing.
 
+`HostPlayModeTests` drives the **Mac window** the way a person does: it builds the real
+`HostApp`, finds the real library buttons and injects real pointer events. It exists because of
+a defect that every other test missed — see §4.1 below — and nothing in it calls a command
+method directly.
+
 `TouchRouterTests` and `ControllerPlayModeTests` cover the control surface. The router is fed
 pointers directly rather than through `Input`, which is the only way to test simultaneous
 multi-touch (FR-071) and cancellation (FR-073) without a touchscreen:
@@ -136,6 +141,24 @@ running the thing:
 `SoakTests` is the full NFR-005 run. It is **opt-in**: without `AIDECK_SOAK_MINUTES` it
 reports *ignored*, never passed. §14 draws a hard line between a test that was not run and one
 that succeeded, and a half-hour test silently counted as passing would be exactly that mistake.
+
+### 4.1 Why the host fixture exists
+
+Two defects reached a real build because every test drove a layer *below* the one that was
+broken:
+
+* **The library's A and B buttons did nothing.** `BrowserView.LoadRequested` was raised and
+  subscribed by nobody on the host. The controller path *was* wired and was tested, and the
+  host was only ever exercised by calling `AudioEngine.LoadTrack` directly — as did the manual
+  check, which used the `-aideck-autoload` startup option and therefore also bypassed the
+  buttons.
+* **Every text field was inert.** There was no `EventSystem` in the app at all, and uGUI takes
+  focus through it. The existing test set `InputField.text` in code, which bypasses focus.
+
+The lesson those two share is that a test must enter through the same door as the user. The
+host fixture presses buttons; the search test types into the field's value and asserts the list
+actually filtered; and a focus test asserts the preconditions a click needs. Removing the fix
+makes 8 of the 10 load tests fail, which is what makes them a guard rather than decoration.
 
 ### When there is no audio device
 
@@ -235,12 +258,12 @@ reason the auto-connect rule exists.
 
 ### Phase 4 verification performed this way
 
-Suite totals at the end of Phase 4:
+Suite totals (updated after the Phase 5 Mac defect fix):
 
 | Suite | Tests | Passed | Failed |
 | --- | --- | --- | --- |
 | EditMode | 332 | 332 | 0 |
-| PlayMode | 56 | 56 | 0 |
+| PlayMode | 68 | 68 | 0 |
 | 30-minute soak (opt-in) | 1 | 1 | 0 |
 
 Compiler warnings: 0. Not run: the on-device tests M1–M8 below, and the real-LAN latency

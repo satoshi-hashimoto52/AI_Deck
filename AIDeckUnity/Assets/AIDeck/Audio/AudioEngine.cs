@@ -351,6 +351,9 @@ namespace AIDeck.Audio
             var model = _decks[index];
             var channel = _channels[index];
 
+            _log?.Info("Audio",
+                $"Deck {deck.ToDisplayName()} loading \"{track.Title}\" ({track.Format}, {track.FilePath}).");
+
             // Silence the outgoing track before its samples are pulled away.
             model.BeginLoad();
             channel.Voice.IsPlaying = false;
@@ -374,7 +377,9 @@ namespace AIDeck.Audio
             model.CompleteLoad(track.Id, result.DurationSeconds, track.Bpm);
             channel.RequestFadeIn();
 
-            _log?.Info("Audio", $"Deck {deck.ToDisplayName()} loaded {track.Title}.");
+            _log?.Info("Audio",
+                $"Deck {deck.ToDisplayName()} decoded \"{track.Title}\": " +
+                $"{result.DurationSeconds:0.0} s, {result.Source.Channels} ch, {result.Source.SampleRate} Hz.");
             DeckLoadCompleted?.Invoke(deck, true, string.Empty);
             _loads[index] = null;
         }

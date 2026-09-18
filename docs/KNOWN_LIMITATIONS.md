@@ -4,7 +4,7 @@ Recorded deliberately, per §14 of
 [Issue #1](https://github.com/satoshi-hashimoto52/AI_Deck/issues/1): a feature that was
 simplified or blocked must be written down, not quietly marked complete.
 
-Last updated: **Phase 4 complete, 2026-09-18.**
+Last updated: **Phase 5 Mac defect fix, 2026-09-18.**
 
 ## 1. Accepted for V1 by the specification
 
@@ -165,6 +165,20 @@ in the header, and most players ignore it.
 
 Refreshing more often would mean more seeks during recording; 5 seconds is the compromise.
 A normal `Stop()` writes the exact sizes and loses nothing.
+
+### 2.11 Recordings are written into the music folder — reported, not changed
+
+`AppPaths.DefaultRecordingFolder` and `MusicFolderScanner.DefaultMusicFolder` both resolve to
+`~/Music/AI Deck`. A recording therefore lands in the same folder the user is told to put music
+in, and the next **ADD FILES** imports it as a library track named `AIDeck_20260918_085224`.
+
+Observed during the Phase 5 verification, when two test recordings appeared in the library.
+
+It is **not fixed here** on purpose. Moving the default changes where a user's recordings are
+written, which is a visible behaviour they may already rely on, so it is theirs to decide
+rather than something to change while fixing an unrelated defect. The obvious remedy is a
+separate `~/Music/AI Deck Recordings`, or skipping files whose name matches the recorder's
+pattern during import.
 
 ## 3. Requires hardware or a person
 

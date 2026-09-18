@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace AIDeck.UI
@@ -149,14 +150,50 @@ namespace AIDeck.UI
             return rect;
         }
 
+        /// <summary>
+        /// Creates the event system that text fields need.
+        ///
+        /// AI Deck's control surface deliberately bypasses <see cref="EventSystem"/> — the
+        /// touch router reads input directly, because FR-071 and FR-073 need several
+        /// simultaneous pointers and a cancel notification that the event system's
+        /// single-selection model does not give. But uGUI's <see cref="InputField"/> takes
+        /// focus *through* the event system, so without one every text box in the app is inert:
+        /// the library search (FR-011), the Mac's import path, and the controller's manual
+        /// address entry (FR-061) could all be clicked and typed at with no effect whatsoever.
+        ///
+        /// The two coexist without interfering: the router never consults the event system, and
+        /// every graphic except the text fields' own backgrounds has ray casting turned off, so
+        /// the event system only ever sees the fields.
+        /// </summary>
+        public static void EnsureEventSystem()
+        {
+            if (EventSystem.current != null)
+            {
+                return;
+            }
+
+            var go = new GameObject("AI Deck EventSystem");
+            go.AddComponent<EventSystem>();
+
+            // The project uses the legacy input backend, which is what the touch router needs;
+            // StandaloneInputModule is its matching module.
+            go.AddComponent<StandaloneInputModule>();
+        }
+
         /// <summary>Builds the canvas both applications hang their UI from.</summary>
         public static Canvas CreateCanvas(string name, Transform parent, Vector2 referenceResolution)
         {
+            // Text fields are dead without it, and every screen starts with a canvas.
+            EnsureEventSystem();
+
             var go = new GameObject(name, typeof(RectTransform));
             go.transform.SetParent(parent, false);
 
             var canvas = go.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+
+            // Lets the event system deliver clicks to the text fields.
+            go.AddComponent<GraphicRaycaster>();
 
             var scaler = go.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;

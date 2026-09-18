@@ -1,4 +1,5 @@
 using AIDeck.Audio;
+using AIDeck.Core.Diagnostics;
 using AIDeck.Core.Library;
 using AIDeck.Core.Model;
 using AIDeck.UI;
@@ -17,11 +18,13 @@ namespace AIDeck.Host
     {
         private readonly AudioEngine _engine;
         private readonly TrackLibrary _library;
+        private readonly DiagnosticLog _log;
 
-        public HostCommands(AudioEngine engine, TrackLibrary library)
+        public HostCommands(AudioEngine engine, TrackLibrary library, DiagnosticLog log = null)
         {
             _engine = engine;
             _library = library;
+            _log = log;
         }
 
         /// <summary>Raised when a command could not be carried out, with a short user-facing reason.</summary>
@@ -34,10 +37,15 @@ namespace AIDeck.Host
             var track = _library.GetById(trackId);
             if (track == null)
             {
+                // Distinguishable in the log from "the button did nothing": the command
+                // arrived, the catalogue simply no longer has that id.
+                _log?.Warning("Command",
+                    $"LoadTrack for deck {deck.ToDisplayName()}: id {trackId} is not in the library.");
                 Reject("That track is no longer in the library.");
                 return;
             }
 
+            _log?.Info("Command", $"LoadTrack deck {deck.ToDisplayName()} ← \"{track.Title}\" ({track.FilePath}).");
             _engine.LoadTrack(deck, track);
         }
 

@@ -122,12 +122,12 @@ UNITY=/Applications/Unity/Hub/Editor/6000.3.23f1/Unity.app/Contents/MacOS/Unity
          -testResults /tmp/editmode-results.xml -logFile /tmp/editmode.log
 ```
 
-Exit code 0 means everything passed. As of Phase 4:
+Exit code 0 means everything passed. Current:
 
 | Suite | Tests | Passed | Failed |
 | --- | --- | --- | --- |
 | EditMode | 332 | 332 | 0 |
-| PlayMode | 56 | 56 | 0 |
+| PlayMode | 68 | 68 | 0 |
 | 30-minute soak (opt-in) | 1 | 1 | 0 |
 
 The soak is opt-in through `AIDECK_SOAK_MINUTES`; without it that one test reports *ignored*,

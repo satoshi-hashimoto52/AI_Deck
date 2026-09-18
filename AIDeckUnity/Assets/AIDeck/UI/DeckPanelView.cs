@@ -43,6 +43,12 @@ namespace AIDeck.UI
 
         public DeckId Deck => _deck;
 
+        /// <summary>The transport state as shown on screen, e.g. "EMPTY" or "PLAYING".</summary>
+        public string StateText => _state != null ? _state.text : string.Empty;
+
+        /// <summary>The tempo reading as shown on screen, e.g. "128.0 BPM".</summary>
+        public string BpmText => _bpm != null ? _bpm.text : string.Empty;
+
         public static DeckPanelView Create(
             string name,
             Transform parent,

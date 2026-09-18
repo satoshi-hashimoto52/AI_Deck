@@ -8,6 +8,42 @@ Requirement IDs refer to
 
 ## [Unreleased]
 
+### Fixed — Phase 5, found on the Mac (2026-09-18)
+
+* **The library's A and B buttons did nothing.** Clicking one showed its pressed state and
+  then nothing happened: no track on the deck, no title, no BPM, no waveform, no time, still
+  `EMPTY`. `BrowserView.LoadRequested` was raised correctly all the way up from the row, and on
+  the host **nobody was subscribed to it** — an event with no subscriber is a silent no-op.
+  `ControllerApp` had wired the same event in Phase 2; `HostApp` never did.
+
+  It survived every check because each one entered below the break: the PlayMode tests called
+  `AudioEngine.LoadTrack` directly or drove the controller, and the manual verification used
+  the `-aideck-autoload` startup option, which also bypasses the buttons.
+
+* **Every text field in the app was inert.** There was no `EventSystem` anywhere, and uGUI's
+  `InputField` takes focus through it, so the library search (FR-011), the Mac's import path
+  and the controller's manual address entry (FR-061) could be clicked and typed at with no
+  effect. FR-061 is the documented fallback for networks where discovery fails, so this
+  mattered. The existing test set `InputField.text` in code, which bypasses focus entirely.
+
+  The canvas now creates an `EventSystem`, a `StandaloneInputModule` and a `GraphicRaycaster`.
+  It does not disturb the touch router, which reads input directly and never consults the event
+  system, and every graphic except the fields' own backgrounds has ray casting off.
+
+### Added — Phase 5 diagnostics
+
+* `HostPlayModeTests`: presses the real buttons in the real `HostApp` and asserts the deck,
+  the on-screen state, the title and the log. With the fix reverted, 8 of its 10 load tests
+  fail.
+* `HostApp` gained test-time overrides for its settings and library paths and a switch for
+  networking, so the fixture can run the real application without writing into the installed
+  app's files or binding its ports.
+* A four-stage load trace — button press, dispatched command, decode result, resulting deck
+  state — each logged once, so the absence of a line localises a break in the chain. It is
+  mirrored to Unity's log via `UnityLogBridge`, because an in-memory log cannot be read off a
+  shipped `.app`.
+* Tests: EditMode 332, PlayMode 68 (+1 opt-in soak), 0 failures.
+
 ### Added — Phase 4: builds and quality (2026-09-18)
 
 * **Cue monitoring now does something.** The CUE buttons previously set a flag that changed

@@ -34,12 +34,32 @@ namespace AIDeck.Host
         private HostScreen _screen;
         private HostCommands _commands;
         private HostNetworkBridge _bridge;
+        private UnityLogBridge _logBridge;
 
         private float _refreshTimer;
         private int _renderedRevision = -1;
         private string _notice = string.Empty;
         private float _noticeTimer;
         private readonly string[] _deckWaveformTrack = { string.Empty, string.Empty };
+
+        /// <summary>
+        /// Where settings are read and written. Null uses the per-user location.
+        ///
+        /// Set before the object is activated. It exists so a test can run the real
+        /// <see cref="HostApp"/> — wiring included, which is the point — without writing into
+        /// the settings of the installed app.
+        /// </summary>
+        public string SettingsPathOverride { get; set; }
+
+        /// <summary>Where the library is read and written. Null uses the per-user location.</summary>
+        public string LibraryPathOverride { get; set; }
+
+        /// <summary>
+        /// Whether to start the network endpoint. Set before the object is activated.
+        /// A test turns it off so it does not compete for the listening ports with a copy of
+        /// AI Deck that happens to be running.
+        /// </summary>
+        public bool NetworkingEnabled { get; set; } = true;
 
         public TrackLibrary Library => _library;
 
@@ -60,10 +80,16 @@ namespace AIDeck.Host
         private void Awake()
         {
             _log = new DiagnosticLog();
-            _settingsStore = new SettingsStore(_log);
+
+            // Mirrored to Unity's log so that a real build leaves a trace on disk
+            // (~/Library/Logs/AI Deck/AI Deck/Player.log). An in-memory log is no use when the
+            // thing you are diagnosing is a shipped .app.
+            _logBridge = new UnityLogBridge(_log);
+
+            _settingsStore = new SettingsStore(_log, SettingsPathOverride);
             _settings = _settingsStore.Load();
 
-            _libraryStore = new LibraryStore(_log);
+            _libraryStore = new LibraryStore(_log, LibraryPathOverride);
             _library = new TrackLibrary();
             var report = _libraryStore.Load(_library);
             if (report.Success && report.Loaded > 0)
@@ -81,10 +107,16 @@ namespace AIDeck.Host
             _importer.Progress += OnImportProgress;
             _importer.Completed += OnImportCompleted;
 
-            _commands = new HostCommands(_engine, _library);
+            _commands = new HostCommands(_engine, _library, _log);
             _commands.Rejected += ShowNotice;
 
             _screen = HostScreen.Create(transform, _commands);
+
+            // The library's A and B buttons. This was missing: the buttons fired, the event had
+            // no subscriber, and a click therefore did nothing at all while still showing its
+            // pressed state. HostPlayModeTests now drives these buttons for real so the
+            // omission cannot come back unnoticed.
+            _screen.Browser.LoadRequested += OnLoadRequested;
             _screen.AddPathRequested += OnAddPath;
             _screen.AllStopRequested += () =>
             {
@@ -94,11 +126,14 @@ namespace AIDeck.Host
             _screen.RemoveSelectedRequested += RemoveSelectedTrack;
             _screen.SetRemoveEnabled(false);
 
-            _bridge = gameObject.AddComponent<HostNetworkBridge>();
-            _bridge.Notice += ShowNotice;
-            _bridge.Initialise(_engine, _commands, _library, _settings, _log);
+            if (NetworkingEnabled)
+            {
+                _bridge = gameObject.AddComponent<HostNetworkBridge>();
+                _bridge.Notice += ShowNotice;
+                _bridge.Initialise(_engine, _commands, _library, _settings, _log);
+            }
 
-            _screen.SetAddress(DeviceInfo.LocalIPv4(), _bridge.Session?.TcpPort ?? ProtocolInfo.DefaultTcpPort);
+            _screen.SetAddress(DeviceInfo.LocalIPv4(), _bridge?.Session?.TcpPort ?? ProtocolInfo.DefaultTcpPort);
             _screen.SetPathField(MusicFolderScanner.DefaultMusicFolder);
 
             _library.Changed += OnLibraryChanged;
@@ -400,12 +435,45 @@ namespace AIDeck.Host
             RefreshLibraryView();
         }
 
+        /// <summary>
+        /// A track was chosen for a deck from the library list.
+        ///
+        /// Logged before dispatch, so that the absence of this line in a build's log separates
+        /// "the button is not wired" from "the load failed".
+        /// </summary>
+        private void OnLoadRequested(TrackInfo track, DeckId deck)
+        {
+            if (track == null)
+            {
+                _log.Warning("Host", $"Load requested for deck {deck.ToDisplayName()} with no track.");
+                return;
+            }
+
+            _log.Info("Host",
+                $"Load requested: deck {deck.ToDisplayName()} ← \"{track.Title}\" " +
+                $"(id {track.Id}, {track.FilePath}).");
+
+            _commands.LoadTrack(deck, track.Id);
+        }
+
         private void OnDeckLoadCompleted(DeckId deck, bool success, string error)
         {
             if (!success)
             {
                 ShowNotice($"Deck {deck.ToDisplayName()}: {error}");
+                _log.Warning("Host", $"Deck {deck.ToDisplayName()} load failed: {error}");
+                return;
             }
+
+            // The resulting deck state, once per completed load. Logging the snapshot every
+            // frame would bury everything else: it is rebuilt twenty times a second.
+            var model = _engine.Deck(deck);
+            var title = _library.GetById(model.TrackId)?.Title ?? "(unknown)";
+            _log.Info("Host",
+                $"Deck {deck.ToDisplayName()} updated: \"{title}\", " +
+                $"{model.TrackLengthSeconds:0.0} s, " +
+                $"{(model.BaseBpm > 0d ? model.BaseBpm.ToString("0.0") + " BPM" : "BPM unknown")}, " +
+                $"state {model.Transport.State}.");
         }
 
         private void OnLogEntry(LogEntry entry)
@@ -441,6 +509,8 @@ namespace AIDeck.Host
             {
                 _log.EntryAdded -= OnLogEntry;
             }
+
+            _logBridge?.Dispose();
         }
 
         /// <summary>Saves settings and the library. Called on quit and after a library change.</summary>

@@ -25,6 +25,7 @@ namespace AIDeck.Controller
         private SettingsStore _settingsStore;
         private ControllerScreen _screen;
         private IControllerBackend _backend;
+        private UnityLogBridge _logBridge;
 
         private float _refreshTimer;
         private int _renderedRevision = -1;
@@ -47,6 +48,9 @@ namespace AIDeck.Controller
             SettingsStore settingsStore = null)
         {
             _log = log ?? new DiagnosticLog();
+
+            // Same reason as the host: an in-memory log cannot be read off an installed app.
+            _logBridge = new UnityLogBridge(_log);
 
             // The store is injectable so the tests do not write into the real settings file.
             // A test that remembers an address the user never typed would leave the app trying
@@ -320,5 +324,7 @@ namespace AIDeck.Controller
             _backend?.ReleaseAll();
             _backend?.Disconnect();
         }
+
+        private void OnDestroy() => _logBridge?.Dispose();
     }
 }
