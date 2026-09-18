@@ -151,8 +151,11 @@ namespace AIDeck.Editor
         /// </summary>
         private static void WriteBuildStamp()
         {
+            // Read once. Writing the stamp creates files of its own, and asking git a second
+            // time afterwards would report the tree dirty because of them.
+            var commit = ShortCommit();
             var contents =
-                "commit=" + ShortCommit() + "\n" +
+                "commit=" + commit + "\n" +
                 "builtUtc=" + DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm") + "\n";
 
             var full = Path.Combine(Directory.GetCurrentDirectory(), BuildStampAssetPath);
@@ -160,7 +163,7 @@ namespace AIDeck.Editor
             File.WriteAllText(full, contents);
             AssetDatabase.ImportAsset(BuildStampAssetPath, ImportAssetOptions.ForceUpdate);
 
-            Debug.Log($"[AI Deck] Build stamp: commit {ShortCommit()}, protocol v{Core.Net.ProtocolInfo.Version}.");
+            Debug.Log($"[AI Deck] Build stamp: commit {commit}, protocol v{Core.Net.ProtocolInfo.Version}.");
         }
 
         /// <summary>
