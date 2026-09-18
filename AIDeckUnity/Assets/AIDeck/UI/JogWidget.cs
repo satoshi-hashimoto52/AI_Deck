@@ -9,23 +9,25 @@ namespace AIDeck.UI
     /// <summary>
     /// The touch platter (§5.3, FR-072, FR-032).
     ///
-    /// Two zones, like a real jog wheel:
-    /// * the **inner disc** is the record surface — touching it grabs the audio and the finger
-    ///   drives playback directly, including backwards;
-    /// * the **outer ring** is the rim — dragging it nudges the track ahead or behind without
-    ///   taking hold of it.
+    /// **The whole visible disc grabs the audio.** An earlier version reserved the outer ring
+    /// for a tempo nudge and only let the inner 62 % of the radius scratch — which is 62 % of
+    /// the *area* doing nothing perceptible, so most of the wheel felt dead. A platter you can
+    /// only use in the middle is not a platter.
     ///
     /// Rotation is measured as an angle around the centre, so the gesture works from anywhere
-    /// on the wheel. One full revolution moves <see cref="SecondsPerRevolution"/> of audio,
-    /// matching a 33⅓ RPM platter, which is what makes the control feel like a turntable
-    /// rather than an abstract slider.
+    /// on the wheel and keeps working after the finger leaves it. One full revolution moves
+    /// <see cref="SecondsPerRevolution"/> of audio, matching a 33⅓ RPM platter, which is what
+    /// makes the control feel like a turntable rather than an abstract slider.
+    ///
+    /// Holding the platter still stops it: if a frame passes with no movement the widget
+    /// reports a rate of zero, exactly as a hand on a record does.
     /// </summary>
     public sealed class JogWidget : TouchWidget
     {
         /// <summary>Audio seconds per full revolution — a 33⅓ RPM platter.</summary>
         public const float SecondsPerRevolution = 1.8f;
 
-        /// <summary>Fraction of the radius that counts as the record surface.</summary>
+        /// <summary>Fraction of the radius drawn as the inner label area. Purely cosmetic.</summary>
         public const float InnerRadiusFraction = 0.62f;
 
         /// <summary>Smoothing on the measured angular velocity, to ride out one-frame jitter.</summary>
@@ -43,6 +45,7 @@ namespace AIDeck.UI
         private float _smoothedRate;
         private float _markAngle;
         private DeckId _deck;
+        private int _lastMoveFrame = -1;
 
         /// <summary>Raised when a finger takes hold of the record surface.</summary>
         public event Action ScratchBegan;
@@ -50,11 +53,20 @@ namespace AIDeck.UI
         /// <summary>Raised with the signed playback rate the gesture is commanding.</summary>
         public event Action<float> ScratchRateChanged;
 
+        /// <summary>
+        /// Raised with the audio seconds this step of the gesture moved the platter.
+        ///
+        /// Displacement is the primitive a jog wheel actually produces; rate is derived from it
+        /// by dividing by the frame time. Rate alone is not enough, because it is clamped for
+        /// safety before it reaches the audio — and a clamped rate multiplied back by the frame
+        /// time is no longer the distance the finger travelled. A quick flick would move the
+        /// track a fraction of what the hand did. The host therefore positions a stopped deck
+        /// from this value and takes the rate only for the sound of a moving one.
+        /// </summary>
+        public event Action<float> ScratchMoved;
+
         /// <summary>Raised when the record surface is released, for any reason.</summary>
         public event Action ScratchEnded;
-
-        /// <summary>Raised with a rate offset when the rim is dragged.</summary>
-        public event Action<float> Nudged;
 
         /// <summary>True while the record surface is held.</summary>
         public bool IsScratching => _scratching;
@@ -123,26 +135,32 @@ namespace AIDeck.UI
 
         protected override void OnPressed(Vector2 screenPosition)
         {
-            var local = ToLocal(screenPosition);
-            _lastAngle = Angle(local);
+            _lastAngle = AngleAt(screenPosition);
             _smoothedRate = 0f;
+            _lastMoveFrame = Time.frameCount;
 
-            if (IsInner(local))
-            {
-                _scratching = true;
-                ScratchBegan?.Invoke();
-                ScratchRateChanged?.Invoke(0f);
-            }
+            // Anywhere on the disc takes hold of the audio.
+            _scratching = true;
+            ScratchBegan?.Invoke();
+            ScratchRateChanged?.Invoke(0f);
 
             Highlight(true);
         }
 
         protected override void OnDragged(Vector2 screenPosition)
         {
-            var local = ToLocal(screenPosition);
-            var angle = Angle(local);
+            if (!_scratching)
+            {
+                return;
+            }
+
+            var angle = AngleAt(screenPosition);
+
+            // DeltaAngle takes the shorter way round, so crossing 359° to 0° is one small step
+            // forward rather than a jump most of the way backwards.
             var delta = Mathf.DeltaAngle(_lastAngle, angle);
             _lastAngle = angle;
+            _lastMoveFrame = Time.frameCount;
 
             var dt = Time.unscaledDeltaTime;
             if (dt <= 0f)
@@ -150,22 +168,40 @@ namespace AIDeck.UI
                 return;
             }
 
-            // Degrees of platter rotation to audio seconds, then to a playback rate.
+            // Degrees of platter rotation to audio seconds, then to a playback rate. Clockwise
+            // is a negative screen-space delta, and must move the track forwards.
             var audioSeconds = -delta / 360f * SecondsPerRevolution;
             var rate = audioSeconds / dt;
 
-            if (_scratching)
+            _smoothedRate = Mathf.Lerp(_smoothedRate, rate, VelocitySmoothing);
+            var value = Mathf.Abs(_smoothedRate) < StillThreshold ? 0f : _smoothedRate;
+            ScratchRateChanged?.Invoke(
+                AudioSafety.Sanitize(value, -PlatterMotion.MaxScratchRate, PlatterMotion.MaxScratchRate, 0f));
+
+            // One revolution is SecondsPerRevolution of audio, so a step of the gesture is
+            // exactly this much of the track, whatever the frame rate happened to be.
+            ScratchMoved?.Invoke(AudioSafety.Sanitize(audioSeconds, -MaxStepSeconds, MaxStepSeconds, 0f));
+        }
+
+        /// <summary>
+        /// Largest jump one gesture step may make. A whole revolution in a single frame is a
+        /// glitch, not a hand.
+        /// </summary>
+        public const float MaxStepSeconds = SecondsPerRevolution;
+
+        private void Update()
+        {
+            if (!_scratching || _lastMoveFrame < 0 || Time.frameCount <= _lastMoveFrame + 1)
             {
-                _smoothedRate = Mathf.Lerp(_smoothedRate, rate, VelocitySmoothing);
-                var value = Mathf.Abs(_smoothedRate) < StillThreshold ? 0f : _smoothedRate;
-                ScratchRateChanged?.Invoke(
-                    AudioSafety.Sanitize(value, -PlatterMotion.MaxScratchRate, PlatterMotion.MaxScratchRate, 0f));
+                return;
             }
-            else
+
+            // A finger resting on the platter is holding it still. Without this the last
+            // reported rate would persist and the record would keep spinning under the hand.
+            if (_smoothedRate != 0f)
             {
-                // The rim bends the tempo briefly rather than taking hold of the audio.
-                Nudged?.Invoke(AudioSafety.Sanitize(
-                    audioSeconds * 4f, -PlatterMotion.MaxNudge, PlatterMotion.MaxNudge, 0f));
+                _smoothedRate = 0f;
+                ScratchRateChanged?.Invoke(0f);
             }
         }
 
@@ -184,16 +220,24 @@ namespace AIDeck.UI
             }
 
             _scratching = false;
+            _lastMoveFrame = -1;
             ScratchEnded?.Invoke();
         }
 
-        private bool IsInner(Vector2 local)
+        /// <summary>
+        /// Angle of a screen point about the centre of the disc.
+        ///
+        /// <see cref="TouchWidget.ToLocal"/> returns a point relative to the rect's *pivot*, and
+        /// the layout places these panels with a top-left pivot. Measuring the angle straight
+        /// from that value swings it about the corner of the wheel instead of its middle, which
+        /// made a steady drag produce deltas that were wrong in size and sometimes in sign —
+        /// the wheel turned, but the track moved erratically or not at all.
+        /// </summary>
+        private float AngleAt(Vector2 screenPosition)
         {
-            var radius = Mathf.Min(Rect.rect.width, Rect.rect.height) * 0.5f;
-            return radius > 0f && local.magnitude <= radius * InnerRadiusFraction;
+            var fromCentre = ToLocal(screenPosition) - Rect.rect.center;
+            return Mathf.Atan2(fromCentre.y, fromCentre.x) * Mathf.Rad2Deg;
         }
-
-        private static float Angle(Vector2 local) => Mathf.Atan2(local.y, local.x) * Mathf.Rad2Deg;
 
         private void Highlight(bool on)
         {

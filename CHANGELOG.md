@@ -38,6 +38,42 @@ Requirement IDs refer to
   application has focus; pointers injected directly (tests, and the network layer) are
   unaffected, and losing focus still cancels whatever was held.
 
+* **The jog wheel barely worked.** Turning the platter moved the track erratically or not at
+  all. Four separate causes, each enough on its own:
+
+  * A **stopped** `DeckVoice` never advances, so `AudioEngine.ReportPosition` reconciling the
+    model from it threw away every seek made between audio callbacks — which is every seek a
+    paused scratch makes. The voice now leads only while it is actually rendering.
+  * Only the **inner 62 %** of the disc started a scratch; the visible outer ring nudged
+    instead. A hand lands on the outer ring, which is where the grip is.
+  * The angle was measured from the rect's **pivot**, which the layout puts at the top-left
+    corner, so a steady drag produced deltas of the wrong size and sometimes the wrong sign.
+    It is now measured about the centre of the disc.
+  * The gesture only reported a **rate**, which the safety clamp truncates. A drag now also
+    reports the displacement it made, so what the hand did survives the clamp.
+
+  The whole visible disc now starts a drag, clockwise goes forward and anticlockwise back
+  across the 0°/359° boundary, the drag continues outside the disc — and outside the window —
+  until the pointer lifts, a playing deck follows it and stays playing, a paused deck moves
+  and stays paused, and the two decks are independent. `ScratchMove` carries the displacement
+  to the host from the iPad as well.
+
+* **Recordings appeared in the library as tracks.** `~/Music/AI Deck` was both the folder the
+  user is told to put music in and the folder recordings were written to, so the next **ADD
+  FILES** imported them as tracks called `AIDeck_20260918_085224`. Recordings now go to
+  `~/Music/AI Deck/Recordings`, a folder scan skips that subfolder and any file named like a
+  recording, and naming either explicitly still imports it. A file that decodes to no audio at
+  all is refused with "The file contains no audio." **No existing recording is moved or
+  deleted**, and rows already in a saved library stay until they are removed by hand — see
+  §2.11 of `KNOWN_LIMITATIONS.md`.
+
+* **The click that raises the window operated the control under it.** macOS brings a
+  background window forward with the same click that lands on a control, and the operating
+  system reports the button going down again when focus returns mid-drag. Both started
+  gestures nobody asked for; the second one was caught on the Mac build loading deck B during
+  a jog drag on deck A. A mouse button that was already held when focus arrived is now ignored
+  until it is released.
+
 ### Added — Phase 5 diagnostics
 
 * `HostPlayModeTests`: presses the real buttons in the real `HostApp` and asserts the deck,
@@ -50,7 +86,20 @@ Requirement IDs refer to
   state — each logged once, so the absence of a line localises a break in the chain. It is
   mirrored to Unity's log via `UnityLogBridge`, because an in-memory log cannot be read off a
   shipped `.app`.
-* Tests: EditMode 332, PlayMode 71 (+1 opt-in soak), 0 failures.
+* A **pointer trail**: every pointer that starts a gesture or is cancelled is logged with
+  where it came from — `Mouse`, `Touch` or `Injected` — its position and the widget it landed
+  on, and focus changes are logged too. Moves are not: a single drag is thousands of them, and
+  the question being answered is always "what started this?". `Injected` is the test path, and
+  nothing in the shipping application calls it: there is no network, IPC or scripting surface
+  that reaches `TouchRouter.PointerDown`.
+* The data folder is logged at startup, folded to `~`. An unsigned build has been observed
+  changing `persistentDataPath` between rebuilds with no project setting changed, which makes
+  a healthy library look empty.
+* `TouchRouter.ProcessMouseState` and `SetFocus` make the mouse path testable: the rules exist
+  because of what the operating system reports around a focus change, and `Input` cannot be
+  driven from a test. A test's frames are logged as `Injected` and can never be mistaken for a
+  real mouse.
+* Tests: EditMode 333, PlayMode 87 (+1 opt-in soak), 0 failures.
 
 ### Added — Phase 4: builds and quality (2026-09-18)
 

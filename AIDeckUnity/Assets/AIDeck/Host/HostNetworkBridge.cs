@@ -185,6 +185,9 @@ namespace AIDeck.Host
                 case MessageType.ScratchUpdate:
                     _commands.ScratchUpdate(deck, Messages.ReadFloat(message));
                     break;
+                case MessageType.ScratchMove:
+                    _commands.ScratchMove(deck, Messages.ReadFloat(message));
+                    break;
                 case MessageType.ScratchEnd:
                     _commands.ScratchEnd(deck);
                     break;

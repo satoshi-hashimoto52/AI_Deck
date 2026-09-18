@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using AIDeck.Core.Deck;
 using AIDeck.Core.Diagnostics;
+using AIDeck.Core.Library;
 using AIDeck.Core.Model;
 using AIDeck.Host;
 using AIDeck.UI;
@@ -382,6 +383,483 @@ namespace AIDeck.Tests.PlayMode
             // The transport accepts PLAY only once a deck holds a track.
             Assert.That(_host.Engine.DeckA.Play(), Is.True, "PLAY was refused after a successful load");
             Assert.That(_host.Engine.DeckA.IsPlaying, Is.True);
+        }
+
+        // ------------------------------------------------------------------ jog wheel
+
+        private JogWidget FindJog(DeckId deck)
+        {
+            var panel = deck == DeckId.A ? _host.Screen.DeckA : _host.Screen.DeckB;
+            return panel.GetComponentInChildren<JogWidget>(true);
+        }
+
+        /// <summary>Screen point on the jog's circle at <paramref name="degrees"/>, 0° = right, CCW positive.</summary>
+        private static Vector2 PointOnJog(JogWidget jog, float degrees, float radiusFraction = 0.8f)
+        {
+            var corners = new Vector3[4];
+            jog.Rect.GetWorldCorners(corners);
+            var centre = (Vector2)((corners[0] + corners[2]) * 0.5f);
+            var radius = Mathf.Min(corners[2].x - corners[0].x, corners[2].y - corners[0].y) * 0.5f;
+            var r = radius * radiusFraction;
+            return centre + new Vector2(Mathf.Cos(degrees * Mathf.Deg2Rad), Mathf.Sin(degrees * Mathf.Deg2Rad)) * r;
+        }
+
+        /// <summary>
+        /// Turns the platter through an arc, one pointer move per step, exactly as a drag does.
+        /// Negative <paramref name="sweep"/> is clockwise, which must move the track forwards.
+        /// </summary>
+        private IEnumerator DragJog(DeckId deck, float fromDegrees, float sweep, int steps = 12,
+                                    float radiusFraction = 0.8f, bool release = true)
+        {
+            var jog = FindJog(deck);
+            Assert.That(jog, Is.Not.Null, $"deck {deck} has no jog wheel");
+
+            var router = _host.Screen.Router;
+            var pointerId = deck == DeckId.A ? 11 : 12;
+
+            router.PointerDown(pointerId, PointOnJog(jog, fromDegrees, radiusFraction));
+            yield return null;
+
+            for (var i = 1; i <= steps; i++)
+            {
+                var angle = fromDegrees + sweep * i / steps;
+                router.PointerMove(pointerId, PointOnJog(jog, angle, radiusFraction));
+                yield return null;
+            }
+
+            if (release)
+            {
+                router.PointerUp(pointerId, PointOnJog(jog, fromDegrees + sweep, radiusFraction));
+                yield return null;
+            }
+        }
+
+        private IEnumerator LoadDeckFromLibrary(string title, DeckId deck)
+        {
+            Click(FindLoadButton(title, deck));
+            yield return WaitForLoad(deck);
+            yield return LetUiCatchUp();
+        }
+
+        [UnityTest]
+        public IEnumerator DraggingTheJogMovesAPausedDeckAndLeavesItPaused()
+        {
+            // The defect: DeckVoice renders nothing while stopped, so on a paused deck the
+            // scratch rate had nowhere to go and the playhead never moved. That is the state a
+            // DJ cues a track in, so the wheel appeared dead.
+            AddTrack("Alpha Tone", 220f);
+            yield return LetUiCatchUp();
+            yield return LoadDeckFromLibrary("Alpha Tone", DeckId.A);
+
+            _host.Engine.DeckA.Seek(1.0d);
+            yield return null;
+            var before = _host.Engine.DeckA.PositionSeconds;
+
+            yield return DragJog(DeckId.A, 90f, -120f);
+
+            Assert.That(_host.Engine.DeckA.PositionSeconds, Is.Not.EqualTo(before).Within(1e-4),
+                "the jog did not move the playhead of a paused deck");
+            Assert.That(_host.Engine.DeckA.IsPlaying, Is.False,
+                "scrubbing a paused deck must not start playback");
+        }
+
+        [UnityTest]
+        public IEnumerator ClockwiseGoesForwardAndAnticlockwiseGoesBack()
+        {
+            AddTrack("Alpha Tone", 220f);
+            yield return LetUiCatchUp();
+            yield return LoadDeckFromLibrary("Alpha Tone", DeckId.A);
+
+            _host.Engine.DeckA.Seek(1.0d);
+            yield return null;
+            var start = _host.Engine.DeckA.PositionSeconds;
+
+            // Screen space has y up, so a clockwise turn is a decreasing angle.
+            yield return DragJog(DeckId.A, 90f, -120f);
+            var afterClockwise = _host.Engine.DeckA.PositionSeconds;
+            Assert.That(afterClockwise, Is.GreaterThan(start), "clockwise must move the track forwards");
+
+            yield return DragJog(DeckId.A, 90f, 120f);
+            Assert.That(_host.Engine.DeckA.PositionSeconds, Is.LessThan(afterClockwise),
+                "anticlockwise must move the track backwards");
+        }
+
+        [UnityTest]
+        public IEnumerator TheGestureSurvivesTheZeroDegreeBoundary()
+        {
+            // Sweeping through 0°/360° must be one continuous move, not a jump the long way
+            // round. Mathf.DeltaAngle is what makes that true; this pins it down.
+            AddTrack("Alpha Tone", 220f);
+            yield return LetUiCatchUp();
+            yield return LoadDeckFromLibrary("Alpha Tone", DeckId.A);
+
+            _host.Engine.DeckA.Seek(1.0d);
+            yield return null;
+            var start = _host.Engine.DeckA.PositionSeconds;
+
+            // 30° down through 0° to -30°: clockwise across the seam.
+            yield return DragJog(DeckId.A, 30f, -60f, steps: 12);
+
+            var moved = _host.Engine.DeckA.PositionSeconds - start;
+            Assert.That(moved, Is.GreaterThan(0d), "crossing 0° reversed the direction");
+
+            // 60° of a 1.8 s revolution is 0.3 s. A wrap bug would give something near 5 s.
+            Assert.That(moved, Is.LessThan(1.0d), $"crossing 0° jumped {moved:0.00} s the long way round");
+        }
+
+        [UnityTest]
+        public IEnumerator TheWholeVisibleDiscStartsADrag()
+        {
+            // The outer ring used to be a tempo nudge, so 62 % of the disc's area did nothing
+            // perceptible. Near the rim must scratch just like the middle.
+            AddTrack("Alpha Tone", 220f);
+            yield return LetUiCatchUp();
+            yield return LoadDeckFromLibrary("Alpha Tone", DeckId.A);
+
+            _host.Engine.DeckA.Seek(1.0d);
+            yield return null;
+            var start = _host.Engine.DeckA.PositionSeconds;
+
+            yield return DragJog(DeckId.A, 90f, -120f, radiusFraction: 0.95f);
+
+            Assert.That(_host.Engine.DeckA.PositionSeconds, Is.GreaterThan(start),
+                "a drag starting near the rim did not move the track");
+        }
+
+        [UnityTest]
+        public IEnumerator TheDragContinuesAfterTheFingerLeavesTheDisc()
+        {
+            AddTrack("Alpha Tone", 220f);
+            yield return LetUiCatchUp();
+            yield return LoadDeckFromLibrary("Alpha Tone", DeckId.A);
+
+            _host.Engine.DeckA.Seek(1.0d);
+            yield return null;
+            var start = _host.Engine.DeckA.PositionSeconds;
+
+            var jog = FindJog(DeckId.A);
+            var router = _host.Screen.Router;
+
+            router.PointerDown(11, PointOnJog(jog, 90f));
+            yield return null;
+
+            // Well outside the disc, as a real hand overshoots.
+            for (var i = 1; i <= 10; i++)
+            {
+                router.PointerMove(11, PointOnJog(jog, 90f - i * 12f, radiusFraction: 2.5f));
+                yield return null;
+            }
+
+            Assert.That(jog.IsScratching, Is.True, "the gesture was dropped when it left the disc");
+            Assert.That(_host.Engine.DeckA.PositionSeconds, Is.GreaterThan(start));
+
+            router.PointerUp(11, PointOnJog(jog, -30f, radiusFraction: 2.5f));
+            yield return null;
+            Assert.That(jog.IsScratching, Is.False);
+        }
+
+        [UnityTest]
+        public IEnumerator ReleasingTheJogReturnsThePlatterToNormal()
+        {
+            AddTrack("Alpha Tone", 220f);
+            yield return LetUiCatchUp();
+            yield return LoadDeckFromLibrary("Alpha Tone", DeckId.A);
+
+            yield return DragJog(DeckId.A, 90f, -120f);
+
+            // The release glides the rate back to 1.0 over ~120 ms.
+            yield return new WaitForSeconds(0.4f);
+
+            Assert.That(_host.Engine.DeckA.Motion.Mode, Is.EqualTo(MotionMode.Normal));
+            Assert.That(_host.Engine.DeckA.Motion.Rate, Is.EqualTo(1f).Within(1e-3f),
+                "the platter did not return to normal speed after the drag");
+        }
+
+        [UnityTest]
+        public IEnumerator HoldingThePlatterStillStopsIt()
+        {
+            AddTrack("Alpha Tone", 220f);
+            yield return LetUiCatchUp();
+            yield return LoadDeckFromLibrary("Alpha Tone", DeckId.A);
+
+            // Grab and turn, then hold without moving — a hand on a record stops it.
+            yield return DragJog(DeckId.A, 90f, -60f, steps: 6, release: false);
+            yield return new WaitForSeconds(0.2f);
+
+            Assert.That(_host.Engine.DeckA.Motion.Rate, Is.EqualTo(0f).Within(1e-3f),
+                "the platter kept spinning while the finger was holding it still");
+
+            _host.Screen.Router.PointerUp(11, PointOnJog(FindJog(DeckId.A), 30f));
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator TheTwoJogWheelsAreIndependent()
+        {
+            AddTrack("Alpha Tone", 220f);
+            AddTrack("Bravo Tone", 330f);
+            yield return LetUiCatchUp();
+            yield return LoadDeckFromLibrary("Alpha Tone", DeckId.A);
+            yield return LoadDeckFromLibrary("Bravo Tone", DeckId.B);
+
+            _host.Engine.DeckA.Seek(1.0d);
+            _host.Engine.DeckB.Seek(1.0d);
+            yield return null;
+
+            var startB = _host.Engine.DeckB.PositionSeconds;
+            yield return DragJog(DeckId.A, 90f, -120f);
+
+            Assert.That(_host.Engine.DeckA.PositionSeconds, Is.GreaterThan(1.0d), "deck A did not move");
+            Assert.That(_host.Engine.DeckB.PositionSeconds, Is.EqualTo(startB).Within(1e-3d),
+                "turning deck A's platter moved deck B");
+            Assert.That(_host.Engine.DeckB.Motion.Mode, Is.EqualTo(MotionMode.Normal));
+        }
+
+        [UnityTest]
+        public IEnumerator DraggingAPlayingDeckMovesItAndLeavesItPlaying()
+        {
+            AddTrack("Alpha Tone", 220f);
+            yield return LetUiCatchUp();
+            yield return LoadDeckFromLibrary("Alpha Tone", DeckId.A);
+
+            _host.Engine.DeckA.Seek(0.5d);
+            Assert.That(_host.Engine.DeckA.Play(), Is.True);
+            yield return new WaitForSeconds(0.2f);
+
+            yield return DragJog(DeckId.A, 90f, -150f);
+
+            Assert.That(_host.Engine.DeckA.IsPlaying, Is.True, "scratching stopped a playing deck");
+            Assert.That(_host.Engine.DeckA.PositionSeconds, Is.GreaterThan(0.5d));
+        }
+
+        [UnityTest]
+        public IEnumerator LosingFocusReleasesTheJog()
+        {
+            AddTrack("Alpha Tone", 220f);
+            yield return LetUiCatchUp();
+            yield return LoadDeckFromLibrary("Alpha Tone", DeckId.A);
+
+            yield return DragJog(DeckId.A, 90f, -60f, steps: 6, release: false);
+            Assert.That(FindJog(DeckId.A).IsScratching, Is.True);
+
+            _host.Screen.Router.SendMessage("OnApplicationFocus", false, SendMessageOptions.DontRequireReceiver);
+            yield return null;
+
+            Assert.That(FindJog(DeckId.A).IsScratching, Is.False,
+                "a held platter survived the window losing focus");
+            Assert.That(_host.Engine.DeckA.Motion.Mode, Is.EqualTo(MotionMode.Normal));
+        }
+
+        [UnityTest]
+        public IEnumerator TheInputSourceIsRecordedForEachAction()
+        {
+            // So an unexplained control movement can be attributed rather than guessed at.
+            AddTrack("Alpha Tone", 220f);
+            yield return LetUiCatchUp();
+
+            var router = _host.Screen.Router;
+            Click(FindLoadButton("Alpha Tone", DeckId.A));
+            yield return WaitForLoad(DeckId.A);
+
+            Assert.That(router.LastPointerSource, Is.EqualTo(PointerSource.Injected),
+                "a test-injected pointer must not be reported as a real mouse click");
+
+            var joined = string.Empty;
+            foreach (var entry in _host.Log.Recent(200))
+            {
+                joined += entry.Message + "\n";
+            }
+
+            Assert.That(joined, Does.Contain("[Injected]"), "the input source was not logged");
+        }
+
+        [UnityTest]
+        public IEnumerator TheClickThatRaisesTheWindowDoesNotOperateTheControlUnderIt()
+        {
+            // macOS raises a background window with the same click that lands on a control.
+            // Acting on it loaded a track nobody asked for, which is how deck B ended up with
+            // the deck A track during a jog drag on the real build.
+            AddTrack("Alpha Tone", 220f);
+            yield return LetUiCatchUp();
+
+            var router = _host.Screen.Router;
+            var button = FindLoadButton("Alpha Tone", DeckId.A);
+            var point = ScreenCentre(button.Rect);
+
+            router.SetFocus(false, mouseButtonHeld: false);
+            yield return null;
+
+            // The button is already down when the window comes forward.
+            router.SetFocus(true, mouseButtonHeld: true);
+            router.ProcessMouseState(pressedThisFrame: true, held: true, releasedThisFrame: false, position: point);
+            yield return null;
+            router.ProcessMouseState(pressedThisFrame: false, held: false, releasedThisFrame: true, position: point);
+            yield return null;
+
+            Assert.That(_host.Engine.DeckA.Transport.State, Is.EqualTo(DeckPlaybackState.Empty),
+                "the click that only brought the window forward loaded a track");
+
+            // The next click is a real one and must work normally.
+            router.ProcessMouseState(pressedThisFrame: true, held: true, releasedThisFrame: false, position: point);
+            yield return null;
+            router.ProcessMouseState(pressedThisFrame: false, held: false, releasedThisFrame: true, position: point);
+            yield return WaitForLoad(DeckId.A);
+
+            Assert.That(_host.Engine.DeckA.Transport.State, Is.Not.EqualTo(DeckPlaybackState.Empty),
+                "the click after the raise was swallowed too");
+        }
+
+        [UnityTest]
+        public IEnumerator AFocusBlipDuringADragDoesNotStartASecondGesture()
+        {
+            // The operating system reports the button going down again when focus returns, so
+            // a gesture the user never began would otherwise seize the platter mid-drag.
+            AddTrack("Alpha Tone", 220f);
+            yield return LetUiCatchUp();
+            yield return LoadDeckFromLibrary("Alpha Tone", DeckId.A);
+
+            var router = _host.Screen.Router;
+            var jog = FindJog(DeckId.A);
+
+            // A batch-mode player is never focused, and the mouse path is focus-gated.
+            router.SetFocus(true, mouseButtonHeld: false);
+            router.ProcessMouseState(true, true, false, PointOnJog(jog, 90f));
+            yield return null;
+            Assert.That(jog.IsScratching, Is.True);
+
+            router.SetFocus(false, mouseButtonHeld: true);
+            yield return null;
+            Assert.That(jog.IsScratching, Is.False, "focus loss must release the platter");
+
+            var position = _host.Engine.DeckA.PositionSeconds;
+
+            router.SetFocus(true, mouseButtonHeld: true);
+            for (var i = 1; i <= 6; i++)
+            {
+                router.ProcessMouseState(false, true, false, PointOnJog(jog, 90f - 30f * i));
+                yield return null;
+            }
+
+            Assert.That(jog.IsScratching, Is.False,
+                "the button that was already held when focus returned started a gesture");
+            Assert.That(_host.Engine.DeckA.PositionSeconds, Is.EqualTo(position).Within(0.01f),
+                "a drag nobody started moved the track");
+
+            // Releasing and pressing again is a real gesture and must be honoured.
+            router.ProcessMouseState(false, false, true, PointOnJog(jog, -90f));
+            yield return null;
+            router.ProcessMouseState(true, true, false, PointOnJog(jog, 90f));
+            yield return null;
+
+            Assert.That(jog.IsScratching, Is.True, "the first real press after the blip was swallowed");
+            router.ProcessMouseState(false, false, true, PointOnJog(jog, 90f));
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator EveryPointerThatStartsAGestureIsLoggedWithItsSourceAndTarget()
+        {
+            AddTrack("Alpha Tone", 220f);
+            yield return LetUiCatchUp();
+
+            Click(FindLoadButton("Alpha Tone", DeckId.A));
+            yield return WaitForLoad(DeckId.A);
+
+            var joined = string.Empty;
+            foreach (var entry in _host.Log.Recent(200))
+            {
+                joined += entry.Message + "\n";
+            }
+
+            Assert.That(joined, Does.Contain("Down [Injected]"), "the pointer trail has no down line");
+            Assert.That(joined, Does.Contain("LoadA"), "the pointer trail does not say what was pressed");
+        }
+
+        // ------------------------------------------------------------------ recordings
+
+        [UnityTest]
+        public IEnumerator RecordingsGoToTheirOwnFolderAndAreNotImported()
+        {
+            // The two halves of the same problem: a recording used to land in the music folder
+            // and come back as a track called AIDeck_20260918_085224.
+            Assert.That(AIDeck.Platform.AppPaths.DefaultRecordingFolder,
+                Does.EndWith(AIDeck.Platform.AppPaths.RecordingsFolderName),
+                "recordings still default to the music folder itself");
+
+            var root = Path.Combine(Path.GetTempPath(), "aideck-scan-" + Guid.NewGuid().ToString("N"));
+            var recordings = Path.Combine(root, AIDeck.Platform.AppPaths.RecordingsFolderName);
+            Directory.CreateDirectory(recordings);
+
+            var song = Path.Combine(root, "A Song.wav");
+            File.Copy(TestAudioFile.CreateTone(1d), song);
+            var inFolder = Path.Combine(recordings, "AIDeck_20260918_085224.wav");
+            File.Copy(song, inFolder);
+            var looseRecording = Path.Combine(root, "AIDeck_20260918_090000.wav");
+            File.Copy(song, looseRecording);
+
+            try
+            {
+                var found = AIDeck.Platform.MusicFolderScanner.Scan(root, out _);
+
+                Assert.That(found, Has.Some.EqualTo(song), "the actual music was not found");
+                Assert.That(found, Has.None.EqualTo(inFolder),
+                    "a recording in the Recordings folder was imported");
+                Assert.That(found, Has.None.EqualTo(looseRecording),
+                    "a recording sitting beside the music was imported");
+
+                // Naming one outright still works.
+                var explicitly = AIDeck.Platform.MusicFolderScanner.Scan(looseRecording, out _);
+                Assert.That(explicitly, Has.Some.EqualTo(looseRecording),
+                    "a recording named explicitly should still be importable");
+
+                // So does pointing at the Recordings folder itself.
+                var chosen = AIDeck.Platform.MusicFolderScanner.Scan(recordings, out _);
+                Assert.That(chosen, Has.Some.EqualTo(inFolder),
+                    "choosing the Recordings folder should import what is in it");
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
+
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator AFileWithNoAudioIsNotAddedToTheLibrary()
+        {
+            // A WAV with a valid header and no samples: an interrupted recording looks like this.
+            var empty = Path.Combine(Path.GetTempPath(), "aideck-empty-" + Guid.NewGuid().ToString("N") + ".wav");
+            File.WriteAllBytes(empty, AIDeck.Core.Audio.WavHeader.Build(48000, 2, 0));
+            _tempAudio.Add(empty);
+
+            var before = _host.Library.Count;
+            var importer = _host.GetComponent<AIDeck.Audio.TrackImporter>();
+            Assert.That(importer, Is.Not.Null);
+
+            List<AddReport> reports = null;
+            void Capture(List<AddReport> r) => reports = r;
+            importer.Completed += Capture;
+
+            try
+            {
+                importer.Import(new List<string> { empty });
+
+                var deadline = Time.realtimeSinceStartup + 25f;
+                while (reports == null && Time.realtimeSinceStartup < deadline)
+                {
+                    yield return null;
+                }
+            }
+            finally
+            {
+                importer.Completed -= Capture;
+            }
+
+            Assert.That(reports, Is.Not.Null, "the import never finished");
+            Assert.That(_host.Library.Count, Is.EqualTo(before), "a file with no audio was added");
+            Assert.That(reports[0].Succeeded, Is.False);
+            Assert.That(reports[0].Reason, Is.Not.Empty, "the skip must say why");
         }
 
         [UnityTest]

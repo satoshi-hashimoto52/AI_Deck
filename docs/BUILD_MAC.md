@@ -16,7 +16,7 @@ UNITY=/Applications/Unity/Hub/Editor/6000.3.23f1/Unity.app/Contents/MacOS/Unity
 
 "$UNITY" -batchmode -nographics -quit \
          -projectPath AIDeckUnity \
-         -executeMethod AIDeck.Editor.BuildPipeline.BuildMac \
+         -executeMethod AIDeck.Editor.AIDeckBuildPipeline.BuildMac \
          -logFile /tmp/aideck-build-mac.log
 ```
 
@@ -58,14 +58,25 @@ Verified in the produced `AI Deck.app`:
 
 ## Where the app keeps its data
 
-Unity keys `persistentDataPath` on the **bundle identifier**, so the Mac host's settings,
-library and waveform cache live in:
+The settings, library and waveform cache live under `Application.persistentDataPath`, which on
+this Mac has been observed at **both** of:
 
 ```
-~/Library/Application Support/com.aideck.host/
+~/Library/Application Support/AI Deck/AI Deck/     (company name / product name)
+~/Library/Application Support/com.aideck.host/     (bundle identifier)
 ```
 
-Deleting that folder resets the library and settings; it never touches your music.
+Which one an unsigned development build picks is not under the project's control, and it has
+changed from one build to the next with no project setting changed — a rebuilt app started
+with an empty library because it was reading the other folder. The app therefore says which
+one it is using on its first line of log:
+
+```
+[AI Deck] Storage: Data folder: ~/Library/Application Support/AI Deck/AI Deck
+```
+
+Read that line before concluding that a library was lost. Deleting the folder resets the
+library and settings; it never touches your music.
 
 ## Running it without clicking
 

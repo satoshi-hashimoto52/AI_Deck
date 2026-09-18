@@ -242,9 +242,16 @@ namespace AIDeck.Audio
             // 1. Advance the platter model; BRAKE completing pauses the transport here.
             model.TickMotion(delta);
 
-            // 2. The voice owns the playhead. Tell the model where it actually is, and follow
-            //    the model back if it wants a correction it could not make itself.
-            if (voice.HasSource)
+            // 2. While the voice is rendering it owns the playhead: tell the model where it
+            //    actually is, and follow the model back if it wants a correction.
+            //
+            //    A *stopped* voice is deliberately not consulted. It only republishes its
+            //    position when a block is rendered, so between audio callbacks it reports a
+            //    stale value — and reconciling from that threw away every seek made in the
+            //    meantime. Scrubbing a paused deck moved the playhead and had it reverted a
+            //    frame later, which is a large part of why the jog wheel felt dead. When the
+            //    transport is stopped the model leads and the voice follows.
+            if (voice.HasSource && voice.IsPlaying)
             {
                 var correction = model.ReportPosition(voice.PositionSeconds);
                 if (correction.HasValue)
@@ -262,6 +269,8 @@ namespace AIDeck.Audio
 
             // 3. Rate and loop window follow the model every frame.
             voice.Rate = model.EffectiveRate;
+
+
             voice.SetLoop(model.Loop.IsActive, model.Loop.InSeconds, model.Loop.OutSeconds);
 
             // 4. Transport, with fades on both edges (§9).
@@ -382,6 +391,35 @@ namespace AIDeck.Audio
                 $"{result.DurationSeconds:0.0} s, {result.Source.Channels} ch, {result.Source.SampleRate} Hz.");
             DeckLoadCompleted?.Invoke(deck, true, string.Empty);
             _loads[index] = null;
+        }
+
+        /// <summary>
+        /// Moves a stopped deck's playhead by an exact number of audio seconds (FR-025, §5.3).
+        ///
+        /// <see cref="DeckVoice"/> renders nothing while it is stopped, so on a paused deck the
+        /// scratch rate had nowhere to go: the platter turned on screen and the playhead never
+        /// moved. That is the state a DJ cues a track in, which is why the jog wheel appeared
+        /// dead. Displacement is applied here instead, so the waveform, the time and the
+        /// snapshot follow the finger while the transport stays stopped and silent.
+        ///
+        /// A *playing* deck is deliberately left alone: its rate already moves it, and applying
+        /// the displacement as well would advance it twice.
+        /// </summary>
+        public void ScrubBy(DeckId deck, float seconds)
+        {
+            var model = Deck(deck);
+            if (model.IsPlaying || !model.HasTrack || model.Motion.Mode != MotionMode.Scratching)
+            {
+                return;
+            }
+
+            var step = AudioSafety.Sanitize(seconds, -8f, 8f, 0f);
+            if (Math.Abs(step) < 1e-7f)
+            {
+                return;
+            }
+
+            model.Seek(model.PositionSeconds + step);
         }
 
         /// <summary>Unloads a deck (recovery path out of an error state).</summary>

@@ -262,8 +262,8 @@ Suite totals (updated after the Phase 5 Mac defect fix):
 
 | Suite | Tests | Passed | Failed |
 | --- | --- | --- | --- |
-| EditMode | 332 | 332 | 0 |
-| PlayMode | 71 | 71 | 0 |
+| EditMode | 333 | 333 | 0 |
+| PlayMode | 87 | 87 | 0 |
 | 30-minute soak (opt-in) | 1 | 1 | 0 |
 
 Compiler warnings: 0. Not run: the on-device tests M1–M8 below, and the real-LAN latency

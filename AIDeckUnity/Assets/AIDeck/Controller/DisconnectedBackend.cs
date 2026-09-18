@@ -78,6 +78,7 @@ namespace AIDeck.Controller
         public void JogNudge(DeckId deck, float amount) { }
         public void ScratchBegin(DeckId deck) { }
         public void ScratchUpdate(DeckId deck, float rate) { }
+        public void ScratchMove(DeckId deck, float seconds) { }
         public void ScratchEnd(DeckId deck) { }
         public void Brake(DeckId deck) { }
         public void Backspin(DeckId deck) { }

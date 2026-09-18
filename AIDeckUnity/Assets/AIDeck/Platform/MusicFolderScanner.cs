@@ -15,6 +15,11 @@ namespace AIDeck.Platform
     /// The walk is depth-limited and count-limited. Pointing it at a home directory by
     /// accident should return a useful set quickly rather than stat every file on the disk,
     /// and an unreadable subfolder is skipped rather than aborting the scan.
+    ///
+    /// A subfolder named <see cref="AppPaths.RecordingsFolderName"/> is skipped, so the app's
+    /// own recordings do not come back as library tracks. Naming the folder explicitly still
+    /// works: the skip only applies to folders the walk *descends into*, never to the one the
+    /// user chose, and never to a file named outright.
     /// </summary>
     public static class MusicFolderScanner
     {
@@ -60,7 +65,14 @@ namespace AIDeck.Platform
                     return results;
                 }
 
-                Walk(trimmed, 0, results);
+                // Choosing the recordings folder outright is a deliberate act, so the filters
+                // that keep recordings out of an ordinary scan are lifted for it.
+                var chosenRecordings = string.Equals(
+                    Path.GetFileName(trimmed.TrimEnd(Path.DirectorySeparatorChar)),
+                    AppPaths.RecordingsFolderName,
+                    StringComparison.OrdinalIgnoreCase);
+
+                Walk(trimmed, 0, results, chosenRecordings);
 
                 if (results.Count == 0)
                 {
@@ -84,7 +96,7 @@ namespace AIDeck.Platform
             return results;
         }
 
-        private static void Walk(string folder, int depth, List<string> results)
+        private static void Walk(string folder, int depth, List<string> results, bool includeRecordings)
         {
             if (depth > MaxDepth || results.Count >= MaxFiles)
             {
@@ -116,6 +128,15 @@ namespace AIDeck.Platform
                     continue;
                 }
 
+                // And our own recordings. New ones live in their own folder, but recordings
+                // made before that separation sit beside the user's music and would otherwise
+                // keep coming back as tracks. Naming one explicitly still imports it, because
+                // that path does not reach this walk.
+                if (!includeRecordings && Core.Audio.WavRecorder.IsRecordingFileName(name))
+                {
+                    continue;
+                }
+
                 if (TrackInfo.IsSupported(file))
                 {
                     results.Add(file);
@@ -140,7 +161,15 @@ namespace AIDeck.Platform
                     continue;
                 }
 
-                Walk(child, depth + 1, results);
+                // Our own recordings are not library material. Pointing the field straight at
+                // this folder still imports it, because that check happens above this walk.
+                if (!includeRecordings &&
+                    string.Equals(name, AppPaths.RecordingsFolderName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                Walk(child, depth + 1, results, includeRecordings);
             }
         }
 

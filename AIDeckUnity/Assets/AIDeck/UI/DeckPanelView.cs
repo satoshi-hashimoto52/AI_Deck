@@ -80,8 +80,12 @@ namespace AIDeck.UI
             _jog = JogWidget.Create("Jog", root, router, _deck);
             _jog.ScratchBegan += () => _commands.ScratchBegin(_deck);
             _jog.ScratchRateChanged += rate => _commands.ScratchUpdate(_deck, rate);
+            _jog.ScratchMoved += seconds => _commands.ScratchMove(_deck, seconds);
             _jog.ScratchEnded += () => _commands.ScratchEnd(_deck);
-            _jog.Nudged += amount => _commands.JogNudge(_deck, amount);
+
+            // No rim-nudge gesture: the whole platter scratches (see JogWidget). The JogNudge
+            // command and its protocol message remain for compatibility and for any future
+            // control that wants a brief tempo bend.
 
             _controls = UiFactory.Create("Controls", root);
 

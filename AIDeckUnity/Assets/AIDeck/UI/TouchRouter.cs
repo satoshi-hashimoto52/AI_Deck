@@ -1,8 +1,33 @@
 using System.Collections.Generic;
+using AIDeck.Core.Diagnostics;
 using UnityEngine;
 
 namespace AIDeck.UI
 {
+    /// <summary>
+    /// Where a pointer event came from.
+    ///
+    /// Recorded so that an unexplained control movement can be attributed rather than guessed
+    /// at. A load that reports <see cref="Injected"/> in a shipped build would mean something
+    /// inside the process is driving the UI, which is a different problem from a stray click.
+    /// </summary>
+    public enum PointerSource
+    {
+        /// <summary>The operating system's mouse, read from <c>Input</c> by this router.</summary>
+        Mouse = 0,
+
+        /// <summary>A touchscreen contact, read from <c>Input.touches</c> by this router.</summary>
+        Touch = 1,
+
+        /// <summary>
+        /// Delivered by code calling <see cref="TouchRouter.PointerDown"/> and friends.
+        /// Nothing in the shipping application does this: the only callers are the PlayMode
+        /// tests, which run in the editor. There is no network, IPC or scripting surface that
+        /// reaches these methods.
+        /// </summary>
+        Injected = 2
+    }
+
     /// <summary>A widget that can take a finger.</summary>
     public interface ITouchTarget
     {
@@ -63,6 +88,23 @@ namespace AIDeck.UI
         /// </summary>
         public bool HasFocus { get; private set; } = true;
 
+        /// <summary>
+        /// Where the most recent pointer event came from. Logged alongside user actions so the
+        /// three input paths can be told apart after the fact.
+        /// </summary>
+        public PointerSource LastPointerSource { get; private set; } = PointerSource.Mouse;
+
+        /// <summary>
+        /// Where every pointer that starts or is cancelled is recorded, or null to record
+        /// nothing.
+        ///
+        /// A control that moved on its own is only diagnosable if there is a line saying which
+        /// input path moved it, where, and onto what. Moves are deliberately not logged: a
+        /// single drag is thousands of them, and the question being answered is always "what
+        /// started this?".
+        /// </summary>
+        public DiagnosticLog Log { get; set; }
+
         /// <summary>Number of fingers currently holding a widget. Shown in diagnostics.</summary>
         public int ActivePointerCount => _captured.Count;
 
@@ -85,7 +127,22 @@ namespace AIDeck.UI
             CancelCapturesFor(target);
         }
 
-        private void OnEnable() => HasFocus = Application.isFocused;
+        /// <summary>
+        /// True while a mouse button that was already down when focus arrived must be ignored.
+        ///
+        /// Clicking a background window is how macOS raises it, and that same click must not
+        /// also operate whatever control happens to be underneath — a click aimed at the title
+        /// bar of a window would otherwise load a track. The same flag covers a focus blip in
+        /// the middle of a drag: the operating system reports the button going down again when
+        /// focus returns, which would start a second gesture the user never began.
+        /// </summary>
+        private bool _mouseHeldFromBeforeFocus;
+
+        private void OnEnable()
+        {
+            HasFocus = Application.isFocused;
+            _mouseHeldFromBeforeFocus = Input.GetMouseButton(0);
+        }
 
         private void Update()
         {
@@ -105,7 +162,7 @@ namespace AIDeck.UI
                 switch (touch.phase)
                 {
                     case TouchPhase.Began:
-                        Begin(id, touch.position);
+                        Begin(id, touch.position, PointerSource.Touch);
                         break;
 
                     case TouchPhase.Moved:
@@ -135,23 +192,57 @@ namespace AIDeck.UI
                 return;
             }
 
+            ProcessMouseState(
+                Input.GetMouseButtonDown(0),
+                Input.GetMouseButton(0),
+                Input.GetMouseButtonUp(0),
+                Input.mousePosition,
+                PointerSource.Mouse);
+        }
+
+        /// <summary>
+        /// Applies one frame of mouse-button state.
+        ///
+        /// Public because the rules below exist entirely because of what the operating system
+        /// reports around a focus change, and <c>Input</c> cannot be driven from a test. A test
+        /// leaves <paramref name="source"/> at its default so its frames are logged as
+        /// <see cref="PointerSource.Injected"/> and can never be mistaken for a real mouse.
+        /// </summary>
+        public void ProcessMouseState(
+            bool pressedThisFrame,
+            bool held,
+            bool releasedThisFrame,
+            Vector2 position,
+            PointerSource source = PointerSource.Injected)
+        {
             // A click aimed at another application is not a click on this one.
             if (!HasFocus)
             {
                 return;
             }
 
-            if (Input.GetMouseButtonDown(0))
+            // The press that brought the window forward belongs to the window manager.
+            if (_mouseHeldFromBeforeFocus)
             {
-                Begin(MousePointerId, Input.mousePosition);
+                if (held)
+                {
+                    return;
+                }
+
+                _mouseHeldFromBeforeFocus = false;
             }
-            else if (Input.GetMouseButton(0))
+
+            if (pressedThisFrame)
             {
-                Move(MousePointerId, Input.mousePosition);
+                Begin(MousePointerId, position, source);
             }
-            else if (Input.GetMouseButtonUp(0))
+            else if (held)
             {
-                End(MousePointerId, Input.mousePosition);
+                Move(MousePointerId, position);
+            }
+            else if (releasedThisFrame)
+            {
+                End(MousePointerId, position);
             }
         }
 
@@ -161,7 +252,8 @@ namespace AIDeck.UI
         /// PlayMode tests feed it directly, which is the only way to test simultaneous
         /// multi-touch (FR-071) and cancellation (FR-073) without a touchscreen.
         /// </summary>
-        public void PointerDown(int id, Vector2 position) => Begin(id, position);
+        public void PointerDown(int id, Vector2 position, PointerSource source = PointerSource.Injected) =>
+            Begin(id, position, source);
 
         /// <summary>Delivers a pointer move.</summary>
         public void PointerMove(int id, Vector2 position) => Move(id, position);
@@ -175,14 +267,21 @@ namespace AIDeck.UI
         /// <summary>True when this pointer currently holds a widget.</summary>
         public bool IsCaptured(int pointerId) => _captured.ContainsKey(pointerId);
 
-        private void Begin(int id, Vector2 position)
+        private void Begin(int id, Vector2 position, PointerSource source)
         {
+            LastPointerSource = source;
+
             if (_captured.ContainsKey(id))
             {
                 Cancel(id);
             }
 
             var target = Pick(position);
+            Log?.Info(
+                "Pointer",
+                $"Down [{source}] id {id} at ({position.x:F0}, {position.y:F0}) → " +
+                (target == null ? "nothing" : Describe(target)));
+
             if (target == null)
             {
                 return;
@@ -219,7 +318,15 @@ namespace AIDeck.UI
             }
 
             _captured.Remove(id);
+            Log?.Info("Pointer", $"Cancelled id {id} holding {Describe(target)}.");
             target.OnTouchCancel(id);
+        }
+
+        /// <summary>Name of the widget's object, for the pointer trail. Never a file path.</summary>
+        private static string Describe(ITouchTarget target)
+        {
+            var rect = target?.TouchRect;
+            return rect == null ? target?.GetType().Name ?? "nothing" : rect.name;
         }
 
         /// <summary>Topmost enabled target whose rectangle contains the point.</summary>
@@ -334,11 +441,22 @@ namespace AIDeck.UI
             }
         }
 
-        private void OnApplicationFocus(bool focused)
+        private void OnApplicationFocus(bool focused) => SetFocus(focused, Input.GetMouseButton(0));
+
+        /// <summary>
+        /// Applies a focus change. Separate from the Unity message because the test has to be
+        /// able to say what the mouse button was doing at the moment focus arrived.
+        /// </summary>
+        public void SetFocus(bool focused, bool mouseButtonHeld)
         {
             HasFocus = focused;
+            Log?.Info("Pointer", focused ? "Window focused." : "Window unfocused; held controls released.");
 
-            if (!focused)
+            if (focused)
+            {
+                _mouseHeldFromBeforeFocus = mouseButtonHeld;
+            }
+            else
             {
                 CancelAll();
             }

@@ -290,6 +290,9 @@ namespace AIDeck.Controller
         public void ScratchUpdate(DeckId deck, float rate) =>
             _session.Send(MessageType.ScratchUpdate, deck, Messages.Float(rate));
 
+        public void ScratchMove(DeckId deck, float seconds) =>
+            _session.Send(MessageType.ScratchMove, deck, Messages.Float(seconds));
+
         public void ScratchEnd(DeckId deck) => _session.Send(MessageType.ScratchEnd, deck);
         public void Brake(DeckId deck) => _session.Send(MessageType.Brake, deck);
         public void Backspin(DeckId deck) => _session.Send(MessageType.Backspin, deck);

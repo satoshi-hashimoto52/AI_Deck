@@ -166,19 +166,37 @@ in the header, and most players ignore it.
 Refreshing more often would mean more seeks during recording; 5 seconds is the compromise.
 A normal `Stop()` writes the exact sizes and loses nothing.
 
-### 2.11 Recordings are written into the music folder — reported, not changed
+### 2.11 Recordings made before 2026-09-18 stay in the library until removed
 
-`AppPaths.DefaultRecordingFolder` and `MusicFolderScanner.DefaultMusicFolder` both resolve to
-`~/Music/AI Deck`. A recording therefore lands in the same folder the user is told to put music
-in, and the next **ADD FILES** imports it as a library track named `AIDeck_20260918_085224`.
+Recordings now go to `~/Music/AI Deck/Recordings` and a folder scan skips that subfolder and
+any file named like a recording, so they no longer appear as tracks. Naming a recording file
+or the `Recordings` folder explicitly in the import field still imports it, because then it is
+what was asked for.
 
-Observed during the Phase 5 verification, when two test recordings appeared in the library.
+What the fix cannot do is un-know the ones already imported. A library saved before the change
+keeps its `AIDeck_20260918_085224`-style rows, and they stay until they are removed with
+**REMOVE**. They are not dropped automatically: the catalogue is the user's, and silently
+deleting rows from it to tidy up a past defect is worse than leaving a row they can remove in
+one click. **No recording file is moved or deleted** — old recordings stay exactly where they
+were written.
 
-It is **not fixed here** on purpose. Moving the default changes where a user's recordings are
-written, which is a visible behaviour they may already rely on, so it is theirs to decide
-rather than something to change while fixing an unrelated defect. The obvious remedy is a
-separate `~/Music/AI Deck Recordings`, or skipping files whose name matches the recorder's
-pattern during import.
+### 2.12 An unsigned build's data folder can move between rebuilds
+
+`Application.persistentDataPath` has been observed at both
+`~/Library/Application Support/AI Deck/AI Deck/` and
+`~/Library/Application Support/com.aideck.host/` on the same Mac, changing from one build to
+the next with no project setting altered — the app is unsigned, and its identity to macOS
+changes each time the binary does. The symptom is a rebuilt app starting with an empty
+library while the old one is still on disk, untouched.
+
+There is no fix inside the project for which folder Unity picks. What the app does instead is
+say which one it is using, on its first line of log:
+
+```
+[AI Deck] Storage: Data folder: ~/Library/Application Support/AI Deck/AI Deck
+```
+
+Signing the app would give it a stable identity. That belongs with the Phase 5 signing work.
 
 ## 3. Requires hardware or a person
 

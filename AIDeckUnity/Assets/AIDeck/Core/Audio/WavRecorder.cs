@@ -392,5 +392,47 @@ namespace AIDeck.Core.Audio
         /// </summary>
         public static string BuildFileName(DateTime localTime) =>
             $"AIDeck_{localTime:yyyyMMdd_HHmmss}.wav";
+
+        /// <summary>Prefix every recording's name starts with.</summary>
+        public const string FileNamePrefix = "AIDeck_";
+
+        /// <summary>
+        /// True when a file name looks like one this recorder produced.
+        ///
+        /// Used to keep recordings out of a library scan. New recordings live in their own
+        /// folder, but recordings made before that separation sit beside the user's music and
+        /// would otherwise keep reappearing as tracks. Naming such a file explicitly still
+        /// imports it — this only filters a folder walk.
+        /// </summary>
+        public static bool IsRecordingFileName(string fileName)
+        {
+            if (string.IsNullOrEmpty(fileName) ||
+                !fileName.StartsWith(FileNamePrefix, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            // AIDeck_yyyyMMdd_HHmmss.wav — digits, an underscore, digits, then the extension.
+            var stem = System.IO.Path.GetFileNameWithoutExtension(fileName);
+            var body = stem.Substring(FileNamePrefix.Length);
+            var parts = body.Split('_');
+            if (parts.Length != 2 || parts[0].Length != 8 || parts[1].Length != 6)
+            {
+                return false;
+            }
+
+            foreach (var part in parts)
+            {
+                foreach (var c in part)
+                {
+                    if (c < '0' || c > '9')
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
     }
 }

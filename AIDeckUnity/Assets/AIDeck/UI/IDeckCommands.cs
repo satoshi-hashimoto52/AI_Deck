@@ -33,6 +33,12 @@ namespace AIDeck.UI
         void JogNudge(DeckId deck, float amount);
         void ScratchBegin(DeckId deck);
         void ScratchUpdate(DeckId deck, float rate);
+
+        /// <summary>
+        /// Moves the platter by an exact number of audio seconds. See
+        /// <c>JogWidget.ScratchMoved</c> for why displacement is sent alongside the rate.
+        /// </summary>
+        void ScratchMove(DeckId deck, float seconds);
         void ScratchEnd(DeckId deck);
         void Brake(DeckId deck);
         void Backspin(DeckId deck);

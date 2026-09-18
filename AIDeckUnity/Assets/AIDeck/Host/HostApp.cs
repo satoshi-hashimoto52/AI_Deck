@@ -89,6 +89,10 @@ namespace AIDeck.Host
             _settingsStore = new SettingsStore(_log, SettingsPathOverride);
             _settings = _settingsStore.Load();
 
+            // Said once at startup: when the library comes back empty the first question is
+            // always which folder it was read from, and that has changed under the app before.
+            _log.Info("Storage", $"Data folder: {AppPaths.ForDisplay(AppPaths.DataFolder)}");
+
             _libraryStore = new LibraryStore(_log, LibraryPathOverride);
             _library = new TrackLibrary();
             var report = _libraryStore.Load(_library);
@@ -111,6 +115,10 @@ namespace AIDeck.Host
             _commands.Rejected += ShowNotice;
 
             _screen = HostScreen.Create(transform, _commands);
+
+            // Every pointer that starts a gesture is recorded with where it came from, so a
+            // control that appears to move on its own can be attributed instead of guessed at.
+            _screen.Router.Log = _log;
 
             // The library's A and B buttons. This was missing: the buttons fired, the event had
             // no subscriber, and a click therefore did nothing at all while still showing its
@@ -449,9 +457,12 @@ namespace AIDeck.Host
                 return;
             }
 
+            // The input source is recorded so an unexplained load can be attributed: a real
+            // click reports Mouse, an iPad contact reports Touch, and anything else in the
+            // process driving the UI reports Injected.
             _log.Info("Host",
-                $"Load requested: deck {deck.ToDisplayName()} ← \"{track.Title}\" " +
-                $"(id {track.Id}, {track.FilePath}).");
+                $"Load requested [{_screen.Router.LastPointerSource}]: deck {deck.ToDisplayName()} ← " +
+                $"\"{track.Title}\" (id {track.Id}, {track.FilePath}).");
 
             _commands.LoadTrack(deck, track.Id);
         }

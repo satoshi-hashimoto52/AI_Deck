@@ -60,6 +60,7 @@ namespace AIDeck.Controller
             _backend = backend ?? new DisconnectedBackend();
 
             _screen = ControllerScreen.Create(transform, _backend.Commands, _settings.LastHostAddress);
+            _screen.Router.Log = _log;
             _screen.Connect.ConnectRequested += OnConnectRequested;
             _screen.Connect.RetryRequested += OnRetryRequested;
             _screen.DisconnectRequested += () => _backend.Disconnect();

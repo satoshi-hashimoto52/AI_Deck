@@ -148,6 +148,8 @@ namespace AIDeck.Host
 
         public void ScratchUpdate(DeckId deck, float rate) => _engine.Deck(deck).Motion.UpdateScratch(rate);
 
+        public void ScratchMove(DeckId deck, float seconds) => _engine.ScrubBy(deck, seconds);
+
         public void ScratchEnd(DeckId deck) => _engine.Deck(deck).Motion.EndScratch();
 
         public void Brake(DeckId deck) => _engine.Deck(deck).Motion.StartBrake();

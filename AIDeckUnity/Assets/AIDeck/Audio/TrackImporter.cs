@@ -110,6 +110,17 @@ namespace AIDeck.Audio
                     continue;
                 }
 
+                // A file that decodes to nothing is not a track. It is usually an interrupted
+                // recording or a placeholder, and adding it gives a row that can be loaded onto
+                // a deck and will never play.
+                if (load.DurationSeconds <= 0d || load.Source.FrameCount <= 0)
+                {
+                    const string reason = "The file contains no audio.";
+                    reports.Add(new AddReport(path, AddTrackResult.Invalid, reason, null));
+                    _log?.Warning("Library", $"Skipped {fileName}: {reason}");
+                    continue;
+                }
+
                 var size = TryGetFileSize(path);
                 var candidate = new TrackInfo(
                     null,

@@ -20,7 +20,7 @@ UNITY=/Applications/Unity/Hub/Editor/6000.3.23f1/Unity.app/Contents/MacOS/Unity
 
 "$UNITY" -batchmode -nographics -quit \
          -projectPath AIDeckUnity \
-         -executeMethod AIDeck.Editor.BuildPipeline.BuildIos \
+         -executeMethod AIDeck.Editor.AIDeckBuildPipeline.BuildIos \
          -logFile /tmp/aideck-build-ios.log
 ```
 

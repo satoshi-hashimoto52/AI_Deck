@@ -61,6 +61,7 @@ namespace AIDeck.Tests.PlayMode
             public void JogNudge(DeckId deck, float amount) => Calls.Add($"Nudge:{deck}");
             public void ScratchBegin(DeckId deck) => Calls.Add($"ScratchBegin:{deck}");
             public void ScratchUpdate(DeckId deck, float rate) => Calls.Add($"ScratchUpdate:{deck}");
+            public void ScratchMove(DeckId deck, float seconds) => Calls.Add($"ScratchMove:{deck}");
             public void ScratchEnd(DeckId deck) => Calls.Add($"ScratchEnd:{deck}");
             public void Brake(DeckId deck) => Calls.Add($"Brake:{deck}");
             public void Backspin(DeckId deck) => Calls.Add($"Backspin:{deck}");

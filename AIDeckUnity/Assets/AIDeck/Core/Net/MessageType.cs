@@ -39,6 +39,9 @@ namespace AIDeck.Core.Net
         JogNudge = 32,
         ScratchBegin = 33,
         ScratchUpdate = 34,
+
+        /// <summary>Exact platter displacement in audio seconds; see JogWidget.ScratchMoved.</summary>
+        ScratchMove = 38,
         ScratchEnd = 35,
         Brake = 36,
         Backspin = 37,
@@ -98,6 +101,7 @@ namespace AIDeck.Core.Net
                 case MessageType.TempoFader:
                 case MessageType.JogNudge:
                 case MessageType.ScratchUpdate:
+                case MessageType.ScratchMove:
                 case MessageType.ChannelGain:
                 case MessageType.Crossfader:
                 case MessageType.MasterGain:

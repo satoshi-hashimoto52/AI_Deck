@@ -84,6 +84,21 @@ namespace AIDeck.Tests.EditMode.Core
             Assert.That(name, Is.EqualTo("AIDeck_20260918_010203.wav"));
         }
 
+        [Test]
+        public void RecordingFileNamesAreRecognisable()
+        {
+            // So a library scan can keep them out while still allowing one to be named outright.
+            Assert.That(WavRecorder.IsRecordingFileName("AIDeck_20260918_085224.wav"), Is.True);
+            Assert.That(WavRecorder.IsRecordingFileName(WavRecorder.BuildFileName(DateTime.Now)), Is.True);
+
+            Assert.That(WavRecorder.IsRecordingFileName("Neon Drive.wav"), Is.False);
+            Assert.That(WavRecorder.IsRecordingFileName("AIDeck_notadate.wav"), Is.False);
+            Assert.That(WavRecorder.IsRecordingFileName("AIDeck_2026_08.wav"), Is.False);
+            Assert.That(WavRecorder.IsRecordingFileName("My AIDeck_20260918_085224.wav"), Is.False);
+            Assert.That(WavRecorder.IsRecordingFileName(null), Is.False);
+            Assert.That(WavRecorder.IsRecordingFileName(string.Empty), Is.False);
+        }
+
         // ------------------------------------------------------------------ recorder
 
         [Test]
