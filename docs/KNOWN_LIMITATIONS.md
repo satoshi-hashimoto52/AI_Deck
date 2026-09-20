@@ -249,3 +249,42 @@ For completeness, the things that were open and are now closed:
 * Both `Info.plist` files carry `NSLocalNetworkUsageDescription`; the iPad one is iPad-only and
   landscape-only.
 * 30 minutes of continuous two-deck playback — see `docs/TEST_PLAN.md` for the result.
+
+## 6. Local music generation (Phase 1)
+
+These belong to the optional generator in `generator/`, not to the DJ application. The deck
+runs and ships without any of it.
+
+### 6.1 A 3.5 GB language model is downloaded and never used
+
+`acestep-5Hz-lm-1.7B` arrives as part of the unified `ACE-Step/Ace-Step1.5` repository, which
+is the repository the *generation* model also lives in, and ACE-Step snapshots it whole. It
+cannot be excluded without patching the pinned upstream. On this hardware it is never loaded:
+the GPU tier reports `available_lm_models == ['acestep-5Hz-lm-0.6B']`, so the 1.7B is disk
+cost only. It is not deleted automatically; `GENERATOR_PHASE1.md` says how to remove it.
+
+### 6.2 About 9.5 GB is orphaned in `.aideck-generator/models`
+
+Phase 0 set `ACESTEP_CHECKPOINTS_DIR`, which the API server ignores, so models were fetched
+into two trees. Phase 1 uses the one the server actually reads and leaves the other in place
+— deleting several gigabytes of someone's download is their decision, not the installer's.
+
+### 6.3 Generation makes a 16 GB machine swap heavily
+
+Measured: the swap file grew from 0 to 19 GB across one 30-second generation, and had not
+returned to zero after the server stopped. The generator's own resident set stayed near
+1.4 GB, so this is the unified-memory working set of the models rather than a leak. Nothing
+in this repository reduces it. Do not generate during a live set until the soak test in
+GEN-010 says it is safe.
+
+### 6.4 The first start is slow and looks like a hang
+
+Loading roughly 10 GB takes minutes on an M1 before the API accepts connections at all. This
+is why the scripts separate "starting" from "ready" and why `status_macos.sh` exists; it is
+not fixed, only made visible.
+
+### 6.5 Generation quality is not assessed here
+
+Whether the vocal is intelligibly Japanese and whether the music is worth playing are
+listening judgements. The scripts verify that a file is a WAV of the requested length with a
+non-zero peak, which is a much weaker claim.

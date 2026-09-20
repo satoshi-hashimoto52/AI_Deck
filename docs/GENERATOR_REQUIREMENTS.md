@@ -29,6 +29,14 @@ library without depending on a paid music service or a service download button.
 | GEN-013 | The iPad controller does not run the model and remains responsive while the Mac generates. | 2 |
 | GEN-014 | The default Night Drive preset produces a DJ-friendly instrumental intro, break and outro at 118 BPM in A minor. | 3 |
 | GEN-015 | No generated result is described as original, rights-cleared or commercially usable without a separate licence review. | all |
+| GEN-016 | The server can be started, inspected, and stopped by scripts that never signal a process they did not start. | 1 |
+| GEN-017 | "Starting" and "ready" are distinguishable without reading the log. | 1 |
+| GEN-018 | Transport, readiness, HTTP, task, timeout, process-exit and invalid-audio failures are reported as separate kinds. | 1 |
+| GEN-019 | A generation longer than one control timeout is not failed on the clock; the maximum wait is stated. | 1 |
+| GEN-020 | An existing output file is never overwritten, and file names cannot escape the output directory. | 1 |
+| GEN-021 | Memory and swap can be measured before starting, after loading, after generating and after stopping. | 1 |
+| GEN-022 | Setup is re-runnable and re-downloads nothing that is already present. | 1 |
+| GEN-023 | The language model in use is fixed by profile and visible at run time. | 1 |
 
 ## 3. Phase 0 acceptance
 
@@ -43,7 +51,25 @@ Phase 0 passes only on the target M1 MacBook Air when all of the following are o
 
 Passing unit tests in another environment does not satisfy these hardware conditions.
 
-## 4. Non-goals for the first release
+## 4. Phase 1 acceptance
+
+Phase 1 passes on the target M1 MacBook Air when all of the following are observed. All were
+observed on 2026-09-20; the figures are in
+[`GENERATOR_PHASE1.md`](GENERATOR_PHASE1.md).
+
+1. `setup_macos.sh` runs a second time without re-downloading a model or replacing anything;
+2. `start_macos.sh` prints the models, the PID, the log path and the checkpoint path, and
+   refuses to start a second copy or to take a port already in use;
+3. `status_macos.sh` distinguishes not-running, starting and ready, and names the loaded
+   language model;
+4. one 30-second track generates and is saved with a JSON sidecar;
+5. AI Deck imports and plays it;
+6. after `stop_macos.sh` no ACE-Step process remains and unrelated processes are untouched;
+7. memory and swap are recorded before starting, after loading, after generating and after
+   stopping;
+8. the loaded language model is shown to be the 0.6B, not the 1.7B.
+
+## 5. Non-goals for the first release
 
 - Training a foundation model from scratch.
 - Claiming Suno-equivalent vocal quality.

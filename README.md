@@ -85,7 +85,8 @@ AI Deck cannot reach the other device without it.
 | [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) | What is tested, how to run it, what is manual |
 | [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md) | What V1 deliberately does not do, and why |
 | [`docs/GENERATOR_REQUIREMENTS.md`](docs/GENERATOR_REQUIREMENTS.md) | Requirements for the post-V1 local music generator |
-| [`docs/GENERATOR_PHASE0.md`](docs/GENERATOR_PHASE0.md) | M1 feasibility setup and acceptance procedure |
+| [`docs/GENERATOR_PHASE0.md`](docs/GENERATOR_PHASE0.md) | M1 feasibility proof — complete, with its measured result |
+| [`docs/GENERATOR_PHASE1.md`](docs/GENERATOR_PHASE1.md) | Running the local generator: start, status, generate, stop, memory |
 | [`docs/GENERATOR_THIRD_PARTY.md`](docs/GENERATOR_THIRD_PARTY.md) | Pinned generator dependencies and licence boundary |
 | [`docs/mockups/`](docs/mockups/) | The controller design reference |
 | [`CLAUDE.md`](CLAUDE.md) | Conventions for anyone — human or agent — working in this repository |

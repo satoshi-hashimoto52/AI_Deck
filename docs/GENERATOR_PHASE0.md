@@ -1,5 +1,11 @@
 # AI Deck Generator — Phase 0 on the M1 Mac
 
+> **Phase 0 is complete.** It ran on this machine on 2026-09-19 and produced
+> `Neon Highway Phase 0.wav` in 86.7 s; the track imported into AI Deck and played.
+> See [Result](#result). The day-to-day commands have since been replaced by the Phase 1
+> scripts — read [`GENERATOR_PHASE1.md`](GENERATOR_PHASE1.md) instead of this page for
+> running the generator. This page is kept as the record of the first proof.
+
 Phase 0 proves the model on the actual target hardware before the Unity UI is built around
 it. It keeps all third-party source, Python packages and model weights in the ignored
 `.aideck-generator/` directory. Nothing is installed inside `AIDeckUnity`.
@@ -65,6 +71,30 @@ Copy the command output and report:
 
 Do not mark Phase 0 complete from the presence of a file alone. The audible result and the
 effect on real-time playback are acceptance criteria.
+
+## Result
+
+Measured on the M1 MacBook Air (16 GB), 2026-09-19:
+
+| | |
+| --- | --- |
+| Track | `~/Music/AI Deck/Generated/Neon Highway Phase 0.wav` |
+| Length | 30 s, 5.8 MB |
+| Generation time | **86.7 s** |
+| Detected BPM in AI Deck | 118.08, against 118 requested |
+| Imported and played in AI Deck | yes |
+| Engine | ACE-Step 1.5 v0.1.8, `acestep-v15-turbo`, MLX |
+
+Two problems came out of the run, and both are addressed in Phase 1:
+
+* **Swap grew to about 42 GB.** No before-reading was taken, so the increase could not be
+  attributed. Phase 1 adds `memory_report.sh` and records four points around a run;
+  the measured figures are in [`GENERATOR_PHASE1.md`](GENERATOR_PHASE1.md#memory-and-swap).
+* **A 3.5 GB `acestep-5Hz-lm-1.7B` was downloaded** although the start script asked for the
+  0.6B. The cause is in ACE-Step's unified-repository download, not in the argument;
+  it is traced to the line in
+  [`GENERATOR_PHASE1.md`](GENERATOR_PHASE1.md#why-the-17b-language-model-was-downloaded).
+  The 1.7B is never loaded on this hardware.
 
 ## 5. Remove the experiment
 

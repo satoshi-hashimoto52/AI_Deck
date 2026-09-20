@@ -107,3 +107,7 @@ Icon
 # would either be stale or churn on every build.
 AIDeckUnity/Assets/Resources/
 AIDeckUnity/Assets/Resources.meta
+
+# Python bytecode from running the generator client and its tests
+__pycache__/
+*.py[cod]

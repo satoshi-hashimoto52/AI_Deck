@@ -8,6 +8,52 @@ Requirement IDs refer to
 
 ## [Unreleased]
 
+### Added — local music generation, Phase 1 (2026-09-20)
+
+Operational work only: the deck is untouched, and there is still no generation UI.
+
+* **The M1 Safe profile**, defined once in `generator/scripts/common.sh`: `acestep-v15-turbo`
+  for generation, `acestep-5Hz-lm-0.6B` on the MLX backend, eager model loading, and
+  deliberately *no* `ACESTEP_CHECKPOINTS_DIR`. Measured on this machine, the GPU tier offers
+  only the 0.6B, so that model is what loads; `/health` and `status_macos.sh` show which one
+  it actually is.
+* **`stop_macos.sh` and `status_macos.sh`.** Stopping validates the PID against the process's
+  own command line before signalling anything, walks the `uv run` → Python tree, and signals
+  the process group. There is no `pkill python` in it: an unrelated `uvicorn` belonging to
+  another project was running throughout the verification and was untouched. Status exits 0
+  ready, 3 not running, 4 starting, 5 HTTP error.
+* **`memory_report.sh`**, taking a labelled RSS and `vm.swapusage` snapshot into
+  `.aideck-generator/logs/memory.log`, so the effect of a run is measured rather than asserted.
+* **`start_macos.sh`** now refuses a second copy, names whoever already holds port 8001,
+  prints the models, PID, log and checkpoint paths, distinguishes "the process is up" from
+  "the API is ready", and stops the server cleanly on Ctrl+C.
+* **`setup_macos.sh`** is re-runnable: it reuses the clone and the virtual environment,
+  re-downloads nothing, lists what is already on disk, and reports a version mismatch instead
+  of replacing anything.
+
+### Fixed — local music generation, Phase 1 (2026-09-20)
+
+* **Every failure was "Local generator is not reachable".** That sentence was right for one
+  case out of seven and sent the user to restart a server that was up and loading. Connection
+  refused, still-initialising, HTTP status, task failure, response timeout, the server process
+  having exited, and audio that is not audio are now separate types with their own exit codes.
+* **One 30-second timeout covered everything**, so a normal generation could be failed on the
+  clock — the measured Phase 0 run was 86.7 s. Control requests keep 30 s, downloads get
+  600 s, and the generation gets its own budget (default 1800 s) with the limit named in the
+  message.
+* **Success was declared on twelve bytes.** A file was accepted if it began `RIFF…WAVE`, which
+  a header-only file also does. The WAV is now parsed for frame count, length and peak
+  amplitude, and a silent or truncated result is deleted and reported as a failure.
+* **The output name was not path-safe.** A title containing separators or leading dots could
+  write outside the output folder; it is stripped now, and a name that reduces to nothing
+  falls back rather than producing a dotfile.
+* **Traced why a 3.5 GB 1.7B language model was downloaded** when the 0.6B was asked for: the
+  generation model shares the unified `ACE-Step/Ace-Step1.5` repository, which ACE-Step
+  snapshots whole. Phase 0 also set `ACESTEP_CHECKPOINTS_DIR`, which
+  `acestep/api/startup_model_init.py` ignores, so the download happened into two trees. The
+  1.7B is never loaded on this hardware. Nothing was deleted; see `KNOWN_LIMITATIONS.md` §6.
+* Tests: 33 Python unit tests, all passing, none loading a model.
+
 ### Fixed — Phase 5, found on the Mac (2026-09-18)
 
 * **The library's A and B buttons did nothing.** Clicking one showed its pressed state and
