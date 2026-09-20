@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using AIDeck.Audio;
 using AIDeck.Core.Diagnostics;
+using AIDeck.Core.Generation;
 using AIDeck.Core.Library;
 using AIDeck.Core.Model;
 using AIDeck.Core.Net;
@@ -35,6 +36,8 @@ namespace AIDeck.Host
         private HostCommands _commands;
         private HostNetworkBridge _bridge;
         private UnityLogBridge _logBridge;
+        private LocalGeneratorBridge _generatorBridge;
+        private HostGenerationController _generation;
 
         private float _refreshTimer;
         private int _renderedRevision = -1;
@@ -134,6 +137,8 @@ namespace AIDeck.Host
             };
             _screen.RemoveSelectedRequested += RemoveSelectedTrack;
             _screen.SetRemoveEnabled(false);
+
+            BuildGeneration();
 
             if (NetworkingEnabled)
             {
@@ -442,7 +447,72 @@ namespace AIDeck.Host
             _log.Info("Library", summary);
             _libraryStore.Save(_library);
             RefreshLibraryView();
+
+            // A generated track arrives through the same importer as ADD FILES, so this is
+            // where the sheet learns that its one file has landed.
+            _generation?.OnImportCompleted();
         }
+
+        /// <summary>
+        /// Whether the generator is wired at all.
+        ///
+        /// A PlayMode test replaces the bridge with a fake before <c>Start</c> runs, so this
+        /// is a property rather than a <c>new</c> buried in the middle of initialisation.
+        /// </summary>
+        public IGeneratorBridge GeneratorBridgeOverride { get; set; }
+
+        /// <summary>The generation sheet's controller, exposed for tests.</summary>
+        public HostGenerationController Generation => _generation;
+
+        /// <summary>
+        /// Builds the generation sheet's wiring.
+        ///
+        /// Nothing here starts a process or loads a model: the bridge only begins *watching*
+        /// a port. A DJ application that loaded ten gigabytes because it was launched would be
+        /// indefensible on a 16 GB machine, so every load is a button press.
+        /// </summary>
+        private void BuildGeneration()
+        {
+            var bridge = GeneratorBridgeOverride;
+            if (bridge == null)
+            {
+                _generatorBridge = gameObject.AddComponent<LocalGeneratorBridge>();
+                _generatorBridge.Initialise(_log);
+                bridge = _generatorBridge;
+            }
+
+            _generation = new HostGenerationController(
+                bridge,
+                _screen.Generate,
+                _log,
+                ReadDeckActivity,
+                ShowNotice,
+                paths => _importer.Import(paths),
+                (deck, trackId) => _commands.LoadTrack(deck, trackId),
+                path => _library.GetByPath(path),
+                System.IO.Path.Combine(
+                    MusicFolderScanner.DefaultMusicFolder, GeneratedFolderName));
+
+            _screen.GenerateRequested += _generation.Open;
+            bridge.Connect();
+        }
+
+        /// <summary>The folder the Python client writes finished tracks into.</summary>
+        public const string GeneratedFolderName = "Generated";
+
+        /// <summary>
+        /// What the decks and the recorder are doing, for the generation gate.
+        ///
+        /// "Stopping" is included deliberately: a deck mid fade-out reports that it is not
+        /// playing while it is still making sound.
+        /// </summary>
+        private DeckActivity ReadDeckActivity() => new DeckActivity(
+            _engine.DeckA.IsPlaying,
+            _engine.DeckB.IsPlaying,
+            _engine.IsStopping(DeckId.A),
+            _engine.IsStopping(DeckId.B),
+            _engine.Mixer.CueA || _engine.Mixer.CueB,
+            _engine.IsRecording);
 
         /// <summary>
         /// A track was chosen for a deck from the library list.

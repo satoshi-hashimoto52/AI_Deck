@@ -8,6 +8,51 @@ Requirement IDs refer to
 
 ## [Unreleased]
 
+### Added — local music generation, Phase 2 (2026-09-20)
+
+Generating from inside AI Deck. The DJ application behaves identically when the sheet is
+closed, and the iPad gained nothing.
+
+* **A GENERATE button and a modal sheet**: title, style, lyrics, length, BPM, key, vocal
+  language and an optional seed; buttons to start the engine, generate, cancel, stop the
+  engine and close; the state and elapsed seconds; and, before anything is pressed, what the
+  first start costs and what it does to swap on 16 GB. "Stop the AI server after generating"
+  is on by default.
+* **A safety gate.** Generation is refused — with the reason on screen — while either deck is
+  playing, while one is still fading out, while a deck is cued into the headphones, and while
+  the master output is being recorded. A deck mid fade-out counts as playing; "not playing"
+  and "silent" are twelve milliseconds apart. This is not a finding that generating during
+  playback is safe or unsafe: it has not been measured, and that measurement is Phase 4.
+* **A local bridge** (`generator/aideck_generator/bridge.py`) that is the only thing Unity
+  talks to. Ten states, six operations, loopback-only, one generation at a time, and prompts
+  and lyrics reduced to lengths before anything is logged.
+* **Explicit process ownership**: AI Deck owns the bridge it started, the bridge owns the
+  engine it started, and neither stops one it merely found. Stopping goes through the
+  PID-validating script; there is no `pkill` anywhere in the chain.
+* **Cancel that actually interrupts.** ACE-Step v0.1.8 has no cancellation endpoint — checked
+  route by route — so cancelling stops the engine by validated PID. The models unload with it.
+  Marking the UI cancelled while the work continued was rejected: a 16 GB machine would grind
+  on for nothing and a track would appear minutes after the user thought they had stopped it.
+* **One finished track reaches the library**, through the same importer ADD FILES uses, so
+  duplicate detection, BPM analysis and the waveform cache are the tested ones. The `.json`
+  sidecar is never offered. Failed, cancelled and invalid results add nothing.
+* Tests: EditMode 386, PlayMode 113 (+1 opt-in soak), Python 66. No test loads a model.
+
+### Fixed — local music generation, Phase 2 (2026-09-20)
+
+* **The bridge answered HTTP/1.0 to Unity's HTTP/1.1 request.** `http.server` does that by
+  default. `curl` copes by treating the connection as closing; `UnityWebRequest` sends
+  keep-alive and waits for a response that never arrives, so the deck's very first poll hung
+  and a finished track was never noticed. The handler now speaks HTTP/1.1, which the accurate
+  `Content-Length` on every response already supported.
+* **The built app could not find the repository.** The walk up from `Application.dataPath`
+  stopped six directories short — one too few for `…/build/mac/AI Deck.app/Contents/Resources/Data`
+  — so a built player reported the generator as not installed.
+* **The poll was a long-lived coroutine and stopped after one pass**, with no exception and no
+  timeout. It is now a timer in `Update` with one short-lived request per tick, and it says in
+  the log when it starts watching and if it ever stops, because the failure it replaced was
+  completely silent.
+
 ### Added — local music generation, Phase 1 (2026-09-20)
 
 Operational work only: the deck is untouched, and there is still no generation UI.

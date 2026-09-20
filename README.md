@@ -87,6 +87,7 @@ AI Deck cannot reach the other device without it.
 | [`docs/GENERATOR_REQUIREMENTS.md`](docs/GENERATOR_REQUIREMENTS.md) | Requirements for the post-V1 local music generator |
 | [`docs/GENERATOR_PHASE0.md`](docs/GENERATOR_PHASE0.md) | M1 feasibility proof — complete, with its measured result |
 | [`docs/GENERATOR_PHASE1.md`](docs/GENERATOR_PHASE1.md) | Running the local generator: start, status, generate, stop, memory |
+| [`docs/GENERATOR_PHASE2.md`](docs/GENERATOR_PHASE2.md) | Generating from inside AI Deck: the sheet, the safety gate, process ownership |
 | [`docs/GENERATOR_THIRD_PARTY.md`](docs/GENERATOR_THIRD_PARTY.md) | Pinned generator dependencies and licence boundary |
 | [`docs/mockups/`](docs/mockups/) | The controller design reference |
 | [`CLAUDE.md`](CLAUDE.md) | Conventions for anyone — human or agent — working in this repository |
@@ -130,8 +131,8 @@ Exit code 0 means everything passed. Current:
 
 | Suite | Tests | Passed | Failed |
 | --- | --- | --- | --- |
-| EditMode | 333 | 333 | 0 |
-| PlayMode | 98 | 98 | 0 |
+| EditMode | 386 | 386 | 0 |
+| PlayMode | 113 | 113 | 0 |
 | 30-minute soak (opt-in) | 1 | 1 | 0 |
 
 The soak is opt-in through `AIDECK_SOAK_MINUTES`; without it that one test reports *ignored*,

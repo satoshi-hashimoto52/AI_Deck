@@ -23,7 +23,8 @@ library without depending on a paid music service or a service download button.
 | GEN-007 | Every output has a JSON sidecar containing parameters, model identity, seed information and elapsed time. | 1 |
 | GEN-008 | Partial, timed-out and failed jobs never appear in the music library. | 1 |
 | GEN-009 | Generated files are written only below the configured generated-music directory. | 1 |
-| GEN-010 | The Unity main thread and audio thread never block on model loading, generation, polling or file writes. | 2 |
+| GEN-010a | The Unity main thread and audio thread are never blocked by generation code: no HTTP, process start, file I/O, lock or allocation on either. | 2 |
+| GEN-010b | Playback stays stable while a **real model** generates. Not claimed, not measured, and not to be checked before the soak. | 4 |
 | GEN-011 | The Mac UI shows queued, generating, completed, failed and cancelled states. | 2 |
 | GEN-012 | A completed song can be refreshed into the library and loaded to deck A or B. | 2 |
 | GEN-013 | The iPad controller does not run the model and remains responsive while the Mac generates. | 2 |
@@ -37,6 +38,13 @@ library without depending on a paid music service or a service download button.
 | GEN-021 | Memory and swap can be measured before starting, after loading, after generating and after stopping. | 1 |
 | GEN-022 | Setup is re-runnable and re-downloads nothing that is already present. | 1 |
 | GEN-023 | The language model in use is fixed by profile and visible at run time. | 1 |
+| GEN-024 | Generation is refused while either deck is playing or fading out, while cue monitoring, or while recording, with the reason shown. | 2 |
+| GEN-025 | AI Deck never starts the engine or loads a model without an explicit button press. | 2 |
+| GEN-026 | Unity talks only to the AI Deck bridge contract, never to the engine's own API. | 2 |
+| GEN-027 | The bridge binds to loopback only and refuses any other address. | 2 |
+| GEN-028 | Each process stops only what it started; an externally started server survives. | 2 |
+| GEN-029 | Cancelling really interrupts the work; the UI is never marked cancelled while generation continues. | 2 |
+| GEN-030 | Prompts, lyrics and absolute paths are never written to a log. | 2 |
 
 ## 3. Phase 0 acceptance
 
@@ -69,7 +77,25 @@ observed on 2026-09-20; the figures are in
    stopping;
 8. the loaded language model is shown to be the 0.6B, not the 1.7B.
 
-## 5. Non-goals for the first release
+## 5. Phase 2 acceptance
+
+Phase 2 passes when all of the following hold. All were observed on 2026-09-20 except where
+the row says otherwise; figures are in [`GENERATOR_PHASE2.md`](GENERATOR_PHASE2.md).
+
+1. **GENERATE** opens a sheet that does not overlap the deck controls;
+2. the sheet refuses to generate while a deck plays, fades out, cues or records, and says why;
+3. nothing starts a process or loads a model until a button is pressed;
+4. one 30-second track generates from inside AI Deck and lands in the library by itself;
+5. **LOAD TO A** / **LOAD TO B** put it on a deck, and it plays after the server is stopped;
+6. "stop the AI server after generating" works, and no ACE-Step process or port 8001 remains;
+7. an unrelated process is never signalled;
+8. memory and swap are recorded either side of the run;
+9. the iPad build contains no model and no Python runtime.
+
+**Not part of Phase 2 acceptance:** generating while a deck plays. That is GEN-010b and waits
+for the Phase 4 soak. Audio quality remains a listening judgement and is left undecided.
+
+## 6. Non-goals for the first release
 
 - Training a foundation model from scratch.
 - Claiming Suno-equivalent vocal quality.

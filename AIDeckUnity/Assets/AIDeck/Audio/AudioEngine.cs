@@ -43,6 +43,15 @@ namespace AIDeck.Audio
         private readonly float[] _stopTimers = new float[2];
         private readonly bool[] _stopping = new bool[2];
 
+        /// <summary>
+        /// True while a deck is fading out but has not gone quiet.
+        ///
+        /// Read by the generation gate: a deck that is "not playing" can still be putting
+        /// sound into the room for another twelve milliseconds, and starting a model load in
+        /// that window is exactly the kind of overlap the gate exists to prevent.
+        /// </summary>
+        public bool IsStopping(DeckId deck) => _stopping[(int)deck];
+
         private int _sampleRate;
         private int _channelCount;
         private bool _shuttingDown;

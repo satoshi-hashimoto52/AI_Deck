@@ -46,6 +46,12 @@ namespace AIDeck.Host
         /// <summary>Raised when the user asks to remove the selected track from the library (§5.6).</summary>
         public event Action RemoveSelectedRequested;
 
+        /// <summary>Raised when the user opens the generation sheet from the top bar.</summary>
+        public event Action GenerateRequested;
+
+        /// <summary>The generation sheet. Built with the screen, shown only on request.</summary>
+        public GeneratePanel Generate { get; private set; }
+
         public static HostScreen Create(Transform parent, IDeckCommands commands)
         {
             var canvas = UiFactory.CreateCanvas("Host Canvas", parent, ReferenceResolution);
@@ -72,6 +78,10 @@ namespace AIDeck.Host
             Mixer = MixerPanelView.Create("Mixer", decks, Router, commands);
             DeckB = DeckPanelView.Create("DeckB", decks, Router, DeckId.B, commands, true);
             _decks = decks;
+
+            // On the canvas rather than inside the content rect, so the sheet covers the deck
+            // completely and no transport control can be reached behind it.
+            Generate = GeneratePanel.Create("GeneratePanel", canvasRect, Router);
 
             _logLabel = UiFactory.CreateText("Log", _content, string.Empty,
                 Theme.FontSizeSmall, TextAnchor.MiddleLeft, Theme.TextDim);
@@ -121,6 +131,9 @@ namespace AIDeck.Host
             _allStopButton = ButtonWidget.Create("AllStop", bar, "ALL STOP", Router, null, Theme.FontSizeSmall);
             _allStopButton.Clicked += () => AllStopRequested?.Invoke();
 
+            _generateButton = ButtonWidget.Create("Generate", bar, "GENERATE", Router, null, Theme.FontSizeSmall);
+            _generateButton.Clicked += () => GenerateRequested?.Invoke();
+
             _importLabel = UiFactory.CreateText("Import", bar, string.Empty,
                 Theme.FontSizeSmall, TextAnchor.MiddleRight, Theme.TextDim);
         }
@@ -130,6 +143,7 @@ namespace AIDeck.Host
         private ButtonWidget _addButton;
         private ButtonWidget _removeButton;
         private ButtonWidget _allStopButton;
+        private ButtonWidget _generateButton;
 
         private void SubmitPath()
         {
@@ -170,7 +184,7 @@ namespace AIDeck.Host
 
             const float buttonWidth = 96f;
             const float buttonStride = buttonWidth + 6f;
-            var buttons = buttonStride * 3f;
+            var buttons = buttonStride * 4f;
             var fieldWidth = Mathf.Max(160f, width - x - buttons - 220f);
             UiFactory.Place((RectTransform)_pathField.transform, x, 6f, fieldWidth, TopBarHeight - 12f);
             x += fieldWidth + 6f;
@@ -179,6 +193,8 @@ namespace AIDeck.Host
             UiFactory.Place(_removeButton.Rect, x, 5f, buttonWidth, TopBarHeight - 10f);
             x += buttonStride;
             UiFactory.Place(_allStopButton.Rect, x, 5f, buttonWidth, TopBarHeight - 10f);
+            x += buttonStride;
+            UiFactory.Place(_generateButton.Rect, x, 5f, buttonWidth, TopBarHeight - 10f);
             x += buttonStride;
             UiFactory.Place(_importLabel.rectTransform, x, 0f, Mathf.Max(0f, width - x), TopBarHeight);
 

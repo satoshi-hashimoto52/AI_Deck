@@ -288,3 +288,61 @@ not fixed, only made visible.
 Whether the vocal is intelligibly Japanese and whether the music is worth playing are
 listening judgements. The scripts verify that a file is a WAV of the requested length with a
 non-zero peak, which is a much weaker claim.
+
+## 7. Generating from inside AI Deck (Phase 2)
+
+### 7.1 Generation is refused while anything is playing
+
+Deliberate, and the refusal is enforced rather than advised. Either deck playing or fading
+out, cue monitoring, or recording all grey the GENERATE button with a reason. This is not a
+finding that generating during playback breaks audio — it is that **nobody has measured it**,
+and one 30-second track takes this machine's swap file from nothing to 19 GB. The measurement
+is GEN-010b, in Phase 4. Until then generation is a preparation activity.
+
+### 7.2 Cancelling stops the whole engine
+
+ACE-Step v0.1.8 has no cancel endpoint, so cancelling stops the server process by validated
+PID. The generation really does stop, but the models unload with it and the next one needs
+**START AI SERVER** again. A track that finishes during the cancellation stays on disk and is
+not added to the library.
+
+### 7.3 A track that finishes while the sheet is closed still arrives
+
+The library reflection follows the bridge's state, not the sheet's visibility, so closing the
+sheet mid-generation does not lose the result. It also means a track can appear in the list
+while the user is looking at the deck. It is never loaded onto a deck without being asked.
+
+### 7.4 The generator is not inside the built application
+
+`generator/` lives in the checkout, not in `AI Deck.app`. A copy of the application moved
+somewhere else will report `not-installed` and the sheet will say so. The iPad build contains
+no Python and no model weights at all — verified by searching the generated Xcode project —
+though the C# bridge *class* is compiled into the shared assemblies. The controller never
+instantiates it.
+
+### 7.5 One generation at a time
+
+A second request is refused with `busy` while one is running. On 16 GB, two would not finish
+faster; they would swap against each other.
+
+### 7.6 The on-screen flow was not click-verified on 2026-09-20
+
+The machine's display was locked for the whole verification window. A locked display starves
+the player's main loop — the audio and socket threads keep running, but `Update` effectively
+stops, and with it the bridge poll (one poll in 49 seconds against a 3-second timer). Synthetic
+clicks do not reach a locked screen either.
+
+So these are **verified**: the bridge contract end to end against the real model (a 30-second
+track in 76 s, validated at 48 kHz stereo), loopback-only binding, process ownership, stopping
+with nothing left behind, and every state the panel can show — the last through PlayMode tests
+against a fake engine.
+
+These are **not verified on the real machine**: pressing GENERATE, typing into the sheet,
+the automatic library reflection with the real engine, and LOAD TO A/B. They are covered by
+PlayMode tests but have not been seen working on screen. Do that with the display awake.
+
+### 7.7 Audio quality is still not assessed
+
+Phase 2 verifies that a validated WAV of the requested length reaches a deck. Whether the
+vocal is intelligibly Japanese and whether the track is worth playing remain listening
+judgements, and are recorded as undecided.
