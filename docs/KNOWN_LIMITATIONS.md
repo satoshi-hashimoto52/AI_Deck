@@ -325,7 +325,20 @@ instantiates it.
 A second request is refused with `busy` while one is running. On 16 GB, two would not finish
 faster; they would swap against each other.
 
-### 7.6 The on-screen flow was not click-verified on 2026-09-20
+### 7.6 Superseded — the on-screen flow is now verified
+
+The first attempt could not be click-verified because the machine's display was locked, which
+starves the player's update loop. It was repeated with the display awake on 2026-09-20 and the
+whole flow was driven on screen: GENERATE, START AI SERVER, `Stopped → Starting → Ready`,
+a 30-second track in 82 s, the library adding exactly one row by itself, and LOAD TO A putting
+it on the deck with the AI server already stopped. Quitting AI Deck left no process and freed
+both ports.
+
+Two defects were found by doing it, and both are fixed: the bridge could not start the engine
+at all when its standard output had been orphaned, and the LOAD TO A/B buttons disappeared the
+moment the automatic stop ran.
+
+### 7.8 The old note, kept for the record
 
 The machine's display was locked for the whole verification window. A locked display starves
 the player's main loop — the audio and socket threads keep running, but `Update` effectively

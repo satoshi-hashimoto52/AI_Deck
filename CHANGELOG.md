@@ -8,6 +8,47 @@ Requirement IDs refer to
 
 ## [Unreleased]
 
+### Fixed — Phase 2 audit, found on the Mac (2026-09-20)
+
+* **START AI SERVER did nothing and the sheet stayed at Stopped**, reporting
+  `internal: BrokenPipeError`. AI Deck starts the bridge as a child process and redirected its
+  `stdout`/`stderr` without ever reading them. When AI Deck went away the read ends closed, so
+  the orphaned bridge's next `print` raised `BrokenPipeError` — and since the first thing
+  `start_server` did was log, the engine was never started. Traced to
+  `bridge.py:150`, the default logger, called from `start_server` at line 234.
+
+  Logging is diagnostics and must not be able to fail an operation. `BridgeLogger` now guards
+  every write, abandons a broken stream rather than retrying it per line, keeps a copy in
+  `.aideck-generator/logs/bridge.log`, and repoints the interpreter's own `stdout` at
+  `os.devnull` so CPython's flush-on-exit cannot end the process with status 120.
+  `GeneratorBridge._log` swallows anything a logger does. AI Deck no longer redirects those
+  streams at all — an unread pipe would also have filled and blocked the bridge mid-write.
+
+* **Quitting AI Deck could strand a bridge-owned ACE-Step server.** `Process.Kill` is SIGKILL,
+  which skips Python's cleanup. AI Deck now asks over `POST /v1/shutdown`, the bridge handles
+  `SIGTERM` through the same path as Ctrl+C, and killing is the last resort after eight
+  seconds.
+
+* **"Stop the AI server after generating" was wired to nothing.** The switch existed, defaulted
+  to on, read correctly — and no code consulted it, so the models stayed resident after every
+  track. It now stops the engine on success only; after a failure the user usually wants
+  another go, and a three-minute reload between attempts would be its own punishment. Not
+  forced, so an adopted server is still left alone.
+
+* **LOAD TO A/B vanished the instant the automatic stop ran.** They were keyed off the
+  transient `Completed` state, which lasts a second or two with the switch on. They now follow
+  "there is a finished track", which the bridge keeps reporting until the next generation.
+
+* **The generation sheet was unreadable on the real screen.** It inherited `Theme`'s 10–13
+  point sizes, which suit a dense deck surface recognised by shape and colour, not a form read
+  word by word. The sheet now carries its own scale — title 23, state 18, body 16, warning 15,
+  labels 14, input text 16, buttons 15 — and a test asserts nothing on it is below 14. The
+  warning's height is measured rather than fixed, so it wraps without the first input landing
+  on top of it, and the card scrolls when the form is taller than the window. `Theme` is
+  unchanged, so the deck looks exactly as it did.
+
+* Tests: EditMode 386, PlayMode 125 (+1 opt-in soak), Python 78.
+
 ### Added — local music generation, Phase 2 (2026-09-20)
 
 Generating from inside AI Deck. The DJ application behaves identically when the sheet is

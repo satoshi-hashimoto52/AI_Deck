@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import signal
 import socketserver
 import sys
 import threading
@@ -110,12 +112,31 @@ class _Handler(BaseHTTPRequestHandler):
             ),
             "/v1/generate": lambda body: self.bridge.generate(body),
             "/v1/cancel": lambda _body: self.bridge.cancel(),
+            "/v1/shutdown": lambda _body: self._shutdown(),
         }
         action = actions.get(route)
         if action is None:
             self._fail(404, "Unknown endpoint.", "not-found")
             return
         self._dispatch(action)
+
+    def _shutdown(self) -> Dict[str, Any]:
+        """Stop the engine we own, then end this process.
+
+        AI Deck asks for this when it quits, over the same contract it already speaks, rather
+        than signalling the process. Sending SIGKILL — which is what .NET's ``Process.Kill``
+        does — skips Python's cleanup entirely and would leave a bridge-owned ACE-Step server
+        holding several gigabytes with nothing left to stop it.
+
+        An engine the bridge merely adopted is left running: it was not ours to start.
+        """
+        state = self.bridge.state()
+        self.bridge.shutdown()
+
+        # Answer first, exit after: the caller gets a clean response rather than a dropped
+        # connection, and the wait is short enough not to hold up a quit.
+        threading.Timer(0.5, lambda: os._exit(0)).start()
+        return {"state": state.get("state", "stopped"), "stopping": True}
 
     def _dispatch(self, action) -> None:
         try:
@@ -182,9 +203,21 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"ERROR: could not bind {arguments.host}:{arguments.port}: {exc}", file=sys.stderr)
         return 3
 
-    print(f"AI Deck generator bridge listening on http://{arguments.host}:{arguments.port}",
-          flush=True)
-    print("This endpoint is loopback-only and is not reachable from the LAN.", flush=True)
+    # A terminated bridge must still stop the engine it started, so SIGTERM unwinds through
+    # the same finally as Ctrl+C instead of ending the process where it stands.
+    def _on_terminate(_signum: int, _frame: Any) -> None:
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, _on_terminate)
+    signal.signal(signal.SIGINT, _on_terminate)
+
+    try:
+        print(f"AI Deck generator bridge listening on http://{arguments.host}:{arguments.port}",
+              flush=True)
+        print("This endpoint is loopback-only and is not reachable from the LAN.", flush=True)
+    except (BrokenPipeError, ValueError, OSError):
+        # Started with no readable standard output. Not a reason to refuse to run.
+        pass
     try:
         while True:
             _thread_join(_thread)

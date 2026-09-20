@@ -19,7 +19,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
 import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -41,7 +43,84 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "generator" / "scripts"
 RUNTIME_ROOT = REPO_ROOT / ".aideck-generator"
 PID_FILE = RUNTIME_ROOT / "run" / "server.pid"
+LOG_DIR = RUNTIME_ROOT / "logs"
+BRIDGE_LOG = LOG_DIR / "bridge.log"
 DEFAULT_OUTPUT_DIR = Path.home() / "Music" / "AI Deck" / "Generated"
+
+
+class BridgeLogger:
+    """Writes a line, and never lets writing one break anything.
+
+    The bridge is started as a child of AI Deck. When AI Deck goes away the bridge can be
+    left running with a standard output whose reader has closed, and then ``print`` raises
+    ``BrokenPipeError`` — which is exactly what happened: the first thing
+    :meth:`GeneratorBridge.start_server` did was log, so pressing START AI SERVER returned
+    ``internal: BrokenPipeError`` and the engine was never started at all.
+
+    Logging is diagnostics. It must not be able to fail an operation, so every write is
+    guarded, a broken stream is abandoned permanently rather than retried on every line, and
+    the file copy under ``.aideck-generator/logs`` is what survives either way.
+
+    Nothing personal reaches it: callers pass text that has already been through
+    :func:`redact` and :func:`loggable`.
+    """
+
+    def __init__(self, path: Path = BRIDGE_LOG, stream: Any = None) -> None:
+        self._path = path
+        self._stream = sys.stdout if stream is None else stream
+        self._stream_broken = False
+        self._file_broken = False
+        self._lock = threading.Lock()
+
+    def __call__(self, message: str) -> None:
+        line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} [bridge] {redact(message)}"
+
+        with self._lock:
+            if not self._stream_broken and self._stream is not None:
+                try:
+                    print(line, file=self._stream, flush=True)
+                except (BrokenPipeError, ValueError, OSError):
+                    # The parent has gone, or the stream was closed under us. Say nothing
+                    # about it on the stream that just failed, and stop trying.
+                    self._stream_broken = True
+                    _detach_broken_standard_streams()
+
+            if self._file_broken:
+                return
+
+            try:
+                self._path.parent.mkdir(parents=True, exist_ok=True)
+                with self._path.open("a", encoding="utf-8") as handle:
+                    handle.write(line + "\n")
+            except OSError:
+                # A read-only or missing runtime directory is not a reason to stop working.
+                self._file_broken = True
+
+    @property
+    def stream_broken(self) -> bool:
+        """Whether the standard stream has been abandoned. For tests and diagnostics."""
+        return self._stream_broken
+
+
+def _detach_broken_standard_streams() -> None:
+    """Point the interpreter's own stdout and stderr at nowhere.
+
+    Catching the write is not quite enough. CPython flushes ``sys.stdout`` once more as it
+    exits, and if that flush fails the process ends with status 120 however cleanly it
+    finished its work — so an orphaned bridge would report a failure it did not have. Swapping
+    the broken streams for ``os.devnull`` makes the final flush a no-op.
+    """
+    for name in ("stdout", "stderr"):
+        stream = getattr(sys, name, None)
+        if stream is None:
+            continue
+        try:
+            stream.flush()
+        except Exception:
+            try:
+                setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))
+            except OSError:
+                setattr(sys, name, None)
 
 
 class BridgeState(str, Enum):
@@ -147,7 +226,7 @@ class GeneratorBridge:
         self._output_dir = Path(output_dir)
         self._client_factory = client_factory or (lambda: AceStepClient(server_pid=read_server_pid()))
         self._runner = runner or _run_script
-        self._log = log or (lambda message: print(f"[bridge] {message}", flush=True))
+        self._logger = log or BridgeLogger()
         self._clock = clock or time.monotonic
 
         # Reentrant on purpose: several public methods take the lock and then ask for a
@@ -159,6 +238,19 @@ class GeneratorBridge:
         self._cancel_requested = False
         self._owns_server = False
         self._last_result: Optional[Dict[str, Any]] = None
+
+    def _log(self, message: str) -> None:
+        """Log, and swallow anything the logger does.
+
+        Belt and braces over :class:`BridgeLogger`, which already guards its own writes: a
+        logger passed in from outside must not be able to fail an operation either. Diagnostics
+        are never worth a failed request.
+        """
+        try:
+            self._logger(message)
+        except Exception:
+            # Deliberately silent: reporting a logging failure needs the logger.
+            pass
 
     # ------------------------------------------------------------------ state
 

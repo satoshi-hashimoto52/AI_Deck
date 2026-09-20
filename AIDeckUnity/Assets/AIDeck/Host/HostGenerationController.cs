@@ -118,6 +118,20 @@ namespace AIDeck.Host
                 && status.CompletedFilePath != _lastImportedPath)
             {
                 ImportCompleted(status.CompletedFilePath);
+
+                // The sheet's "stop the AI server after generating" switch is on by default
+                // because the models hold several gigabytes on a machine with sixteen, and the
+                // common case is make a track, then play. Only on success: after a failure the
+                // user will usually want another go, and a three-minute reload between attempts
+                // would be its own punishment.
+                //
+                // Not forced, so an engine the bridge merely adopted is left running — it was
+                // not ours to start.
+                if (_panel.StopServerAfterGenerating)
+                {
+                    _log?.Info("Generator", "Stopping the generator: asked to after generating.");
+                    _bridge.StopServer(force: false);
+                }
             }
 
             if (_panel.IsVisible)

@@ -147,9 +147,18 @@ namespace AIDeck.Platform
                 if (!_bridgeProcess.HasExited)
                 {
                     _log?.Info("Generator", "Stopping the generator bridge AI Deck started.");
-                    _bridgeProcess.CloseMainWindow();
-                    _bridgeProcess.Kill();
-                    _bridgeProcess.WaitForExit(5000);
+
+                    // Asked over the contract rather than signalled, so the bridge runs its
+                    // own shutdown and stops the ACE-Step server it owns. Process.Kill is
+                    // SIGKILL: it would skip that entirely and leave several gigabytes of
+                    // model resident with nothing left that knows how to stop it.
+                    if (!RequestBridgeShutdown() || !_bridgeProcess.WaitForExit(8000))
+                    {
+                        _log?.Warning("Generator",
+                            "The bridge did not stop when asked; ending the process.");
+                        _bridgeProcess.Kill();
+                        _bridgeProcess.WaitForExit(3000);
+                    }
                 }
             }
             catch (Exception exception)
@@ -167,6 +176,43 @@ namespace AIDeck.Platform
         }
 
         private void OnApplicationQuit() => Shutdown();
+
+        /// <summary>
+        /// Asks the bridge to shut itself down, synchronously.
+        ///
+        /// Quitting is the one moment a blocking call is the right shape: there is no next
+        /// frame to deliver a coroutine's result to. The timeout is short because a bridge
+        /// that cannot answer gets ended the hard way a moment later anyway.
+        /// </summary>
+        private bool RequestBridgeShutdown()
+        {
+            try
+            {
+                var request = (System.Net.HttpWebRequest)System.Net.WebRequest.Create(
+                    _baseUrl + "/v1/shutdown");
+                request.Method = "POST";
+                request.ContentType = "application/json";
+                request.Timeout = 5000;
+                request.ReadWriteTimeout = 5000;
+
+                var body = System.Text.Encoding.UTF8.GetBytes("{}");
+                request.ContentLength = body.Length;
+                using (var stream = request.GetRequestStream())
+                {
+                    stream.Write(body, 0, body.Length);
+                }
+
+                using (var response = (System.Net.HttpWebResponse)request.GetResponse())
+                {
+                    return response.StatusCode == System.Net.HttpStatusCode.OK;
+                }
+            }
+            catch (Exception exception)
+            {
+                _log?.Info("Generator", $"The bridge did not accept a shutdown request: {exception.GetType().Name}");
+                return false;
+            }
+        }
 
         // ---------------------------------------------------------------- polling
 
@@ -347,6 +393,19 @@ namespace AIDeck.Platform
 
             try
             {
+                // Standard output and error are deliberately NOT redirected.
+                //
+                // They were, and nothing ever read them. That gave two failures: the 16 KB
+                // pipe would eventually fill and block the bridge mid-write, and — the one
+                // that was actually hit — when AI Deck went away the read ends closed, so the
+                // orphaned bridge's next log line raised BrokenPipeError. Since the first
+                // thing START AI SERVER did was log, the engine was never started and the
+                // panel sat at Stopped reporting "internal: BrokenPipeError".
+                //
+                // Reading them asynchronously would also work, but the callbacks arrive on a
+                // thread pool thread where no Unity API may be touched, and the bridge already
+                // keeps its own log at .aideck-generator/logs/bridge.log. No pipe is the
+                // simplest thing that cannot break.
                 var info = new ProcessStartInfo
                 {
                     FileName = "/usr/bin/env",
@@ -354,8 +413,8 @@ namespace AIDeck.Platform
                     WorkingDirectory = _repositoryRoot,
                     UseShellExecute = false,
                     CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true
+                    RedirectStandardOutput = false,
+                    RedirectStandardError = false
                 };
 
                 _bridgeProcess = Process.Start(info);

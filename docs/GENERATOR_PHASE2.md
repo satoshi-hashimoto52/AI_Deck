@@ -57,6 +57,35 @@ task-list shape of `query_result`, the missing cancel.
 | `failed` / `cancelled` | nothing is offered to the library |
 | `cancelling` | the engine is being stopped |
 
+### Logging, and why it cannot fail an operation
+
+The bridge is started as a child of AI Deck. If AI Deck goes away, the bridge can be left
+running with a standard output whose reader has closed — and then `print` raises
+`BrokenPipeError`. Because `start_server` logged before it did anything, pressing **START AI
+SERVER** answered `internal: BrokenPipeError` and the engine was never started at all.
+
+Three things changed, and the order matters:
+
+1. `BridgeLogger` guards every write, abandons a broken stream permanently rather than
+   retrying it per line, and keeps a copy in `.aideck-generator/logs/bridge.log`. It also
+   points the interpreter's own `stdout` at `os.devnull` once the stream breaks, because
+   CPython flushes it again on exit and a failure there ends the process with status 120.
+2. `GeneratorBridge._log` swallows anything a logger does, so a logger injected from outside
+   cannot fail a request either.
+3. AI Deck **no longer redirects** the bridge's `stdout`/`stderr`. Redirecting them and never
+   reading them gave two failures: a 16 KB pipe that would eventually fill and block the
+   bridge mid-write, and the closed-reader case above. Reading them asynchronously would also
+   work, but the callbacks arrive on a thread-pool thread where no Unity API may be touched,
+   and the bridge already keeps its own log. No pipe is the simplest thing that cannot break.
+
+Nothing personal reaches that log: the prompt and lyrics are recorded as lengths and the home
+directory is folded to `~`. A real line looks like
+
+```
+2026-09-20 22:38:51 [bridge] queued: {"title": "Neon Highway Phase 2", "prompt_length": 198,
+"lyrics_length": 0, "duration_seconds": 30, "bpm": 118, ...}
+```
+
 ### Process ownership
 
 Each arrow is an ownership **only if that side started the other**.
@@ -68,6 +97,11 @@ Each arrow is an ownership **only if that side started the other**.
 * Stopping always goes through `stop_macos.sh`, which validates the PID against the process's
   own command line. There is no `pkill` and no name matching anywhere in the chain — an
   unrelated `uvicorn` belonging to another project survived every test run.
+* AI Deck asks the bridge to stop over `POST /v1/shutdown` rather than signalling it. .NET's
+  `Process.Kill` is SIGKILL, which skips Python's cleanup entirely and would leave a
+  bridge-owned ACE-Step server resident with nothing left that knows how to stop it. The
+  bridge also handles `SIGTERM` by unwinding through the same path as Ctrl+C. Killing is the
+  last resort, after the polite request has had eight seconds.
 
 **AI Deck never starts the engine by itself.** Launching a DJ application must not load ten
 gigabytes of weights, so the model load is always a button press.
@@ -145,6 +179,30 @@ completed track's full path is used once, to hand one file to the importer, and 
 * No iPad generation screen. The iPad runs no model and gained no new screen.
 * No Night Drive preset. The Phase 1 defaults are the starting values (GEN-014, Phase 3).
 * No generation during playback (Phase 4).
+
+## The sheet's type scale
+
+The panel does **not** use `Theme`'s font sizes. Those are tuned for a dense deck surface that
+is read at a glance and largely recognised by shape and colour; at 10–13 points a *form* is
+unreadable, which is what the first build was reported as. Changing `Theme` would have moved
+every label on the deck, which was not what was wrong.
+
+| Element | Points |
+| --- | --- |
+| Title | 23 |
+| State | 18 |
+| Body and guidance | 16 |
+| Warning | 15 |
+| Input labels | 14 |
+| Input text | 16 |
+| Button text | 15 |
+
+These are reference-resolution points at 1440×900 with the canvas matching height, so at that
+size they are literal. A test asserts every label on the sheet is at least 14.
+
+The warning is measured rather than given a fixed height — it is two lines at one card width
+and three at another — and the first input is placed below whatever it needed. When the form
+is taller than the card, which happens on a short window, the card scrolls.
 
 ## Known limitations
 

@@ -406,6 +406,110 @@ namespace AIDeck.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator TheServerIsStoppedAfterGeneratingWhenAskedTo()
+        {
+            // On by default, and it was wired to nothing: the switch existed, read correctly,
+            // and no code ever consulted it, so the engine stayed resident after every track.
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+            Assert.That(_host.Screen.Generate.StopServerAfterGenerating, Is.True,
+                "the switch should start on");
+
+            var path = WriteGeneratedTrack("Stop After Test");
+            _bridge.Push(GeneratorState.Completed, "Done.", "Stop After Test.wav", path, 2d);
+
+            var deadline = Time.realtimeSinceStartup + 20f;
+            while (!_bridge.Calls.Contains("stop") && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.That(_bridge.Calls, Does.Contain("stop"),
+                "the generator was left loaded although the switch asked for it to be stopped");
+            Assert.That(_bridge.Calls, Does.Not.Contain("stop:force"),
+                "an adopted server must not be forced down by the automatic stop");
+        }
+
+        [UnityTest]
+        public IEnumerator TheLoadButtonsSurviveTheServerStoppingItself()
+        {
+            // With the automatic stop on, the state goes Completed → Stopped within a second.
+            // Keying the load buttons off the state made them appear and vanish before anyone
+            // could press them.
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+
+            var path = WriteGeneratedTrack("Load Survives Test");
+            _bridge.Push(GeneratorState.Completed, "Done.", "Load Survives Test.wav", path, 2d);
+            yield return LetUiCatchUp();
+            Assert.That(FindButton("LoadA").gameObject.activeSelf, Is.True,
+                "LOAD TO A never appeared");
+
+            _bridge.Push(GeneratorState.Stopped, "The generator is stopped.",
+                "Load Survives Test.wav", path, 2d);
+            yield return LetUiCatchUp();
+
+            Assert.That(FindButton("LoadA").gameObject.activeSelf, Is.True,
+                "LOAD TO A disappeared when the generator stopped itself");
+            Assert.That(FindButton("LoadB").gameObject.activeSelf, Is.True);
+        }
+
+        [UnityTest]
+        public IEnumerator TheLoadButtonsAreHiddenWhileAGenerationRuns()
+        {
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+
+            var path = WriteGeneratedTrack("Hidden While Busy");
+            _bridge.Push(GeneratorState.Completed, "Done.", "Hidden While Busy.wav", path, 2d);
+            yield return LetUiCatchUp();
+
+            _bridge.Push(GeneratorState.Generating, "Generating…", "Hidden While Busy.wav", path, 2d);
+            yield return LetUiCatchUp();
+
+            Assert.That(FindButton("LoadA").gameObject.activeSelf, Is.False,
+                "the previous track's load button stayed up during the next generation");
+        }
+
+        [UnityTest]
+        public IEnumerator TheServerIsLeftRunningWhenTheSwitchIsOff()
+        {
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+
+            Click(FindButton("StopAfter"));
+            yield return LetUiCatchUp();
+            Assert.That(_host.Screen.Generate.StopServerAfterGenerating, Is.False);
+
+            var path = WriteGeneratedTrack("Keep Running Test");
+            _bridge.Push(GeneratorState.Completed, "Done.", "Keep Running Test.wav", path, 2d);
+            yield return LetUiCatchUp();
+            yield return LetUiCatchUp();
+
+            Assert.That(_bridge.Calls, Does.Not.Contain("stop"),
+                "the generator was stopped although the switch was off");
+        }
+
+        [UnityTest]
+        public IEnumerator AFailedGenerationLeavesTheServerLoadedForAnotherTry()
+        {
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+
+            _bridge.Push(GeneratorState.Failed, "It failed.", errorKind: "task-failed");
+            yield return LetUiCatchUp();
+            yield return LetUiCatchUp();
+
+            Assert.That(_bridge.Calls, Does.Not.Contain("stop"),
+                "a three-minute reload between retries is its own punishment");
+        }
+
+        [UnityTest]
         public IEnumerator PressingCancelAsksTheBridgeToCancel()
         {
             yield return LetUiCatchUp();
@@ -521,6 +625,166 @@ namespace AIDeck.Tests.PlayMode
             var info = new TrackInfo(null, path, title, "Generator", 2d,
                 TrackFormat.Wav, DateTime.UtcNow, 0d, new FileInfo(path).Length);
             _host.Library.Add(info);
+        }
+
+        // ------------------------------------------------- the sheet has to be readable
+        //
+        // Reported from the real machine: every word on this sheet was too small to read. The
+        // deck's own type scale is tuned for a dense surface recognised by shape and colour;
+        // a form is read word by word, and these assert the sizes that were actually asked for.
+
+        private Text FindText(string name)
+        {
+            foreach (var text in _host.Screen.Generate.GetComponentsInChildren<Text>(true))
+            {
+                if (text.gameObject.name == name)
+                {
+                    return text;
+                }
+            }
+
+            return null;
+        }
+
+        [UnityTest]
+        public IEnumerator EveryWordOnTheSheetIsBigEnoughToRead()
+        {
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+
+            foreach (var text in _host.Screen.Generate.GetComponentsInChildren<Text>(true))
+            {
+                Assert.That(text.fontSize, Is.GreaterThanOrEqualTo(GeneratePanel.MinimumFontSize),
+                    $"\"{text.gameObject.name}\" is {text.fontSize} pt, below the readable floor");
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator TheHeadingsAndControlsUseTheSizesThatWereAskedFor()
+        {
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+
+            Assert.That(FindText("Title").fontSize, Is.InRange(22, 24));
+            Assert.That(FindText("State").fontSize, Is.InRange(17, 18));
+            Assert.That(FindText("Warning").fontSize, Is.InRange(14, 15));
+            Assert.That(FindText("TitleFieldLabel").fontSize, Is.InRange(13, 14));
+            Assert.That(FindButton("GenerateNow").GetComponentInChildren<Text>().fontSize,
+                Is.InRange(14, 15));
+        }
+
+        [UnityTest]
+        public IEnumerator TheWarningWrapsAndIsGivenTheHeightItNeeds()
+        {
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+
+            var warning = FindText("Warning");
+
+            Assert.That(warning.horizontalOverflow, Is.EqualTo(HorizontalWrapMode.Wrap),
+                "the warning must wrap rather than run off the card");
+            Assert.That(warning.rectTransform.rect.height,
+                Is.GreaterThanOrEqualTo(warning.preferredHeight - 1f),
+                "the warning is taller than the space it was given, so part of it is hidden");
+        }
+
+        [UnityTest]
+        public IEnumerator NothingOverlapsTheWarning()
+        {
+            // The failure this guards is a fixed-height warning with the first input drawn on
+            // top of its third line.
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+
+            var warning = FindText("Warning").rectTransform;
+            var titleField = (RectTransform)FindField("TitleField").transform;
+
+            var warningBottom = warning.anchoredPosition.y - warning.rect.height;
+            Assert.That(titleField.anchoredPosition.y, Is.LessThanOrEqualTo(warningBottom + 0.5f),
+                "the first input starts before the warning has finished");
+        }
+
+        [UnityTest]
+        public IEnumerator EveryControlIsReachableOnASmallWindow()
+        {
+            // At readable type the form is taller than a short window, so it scrolls. What
+            // must never happen is a control that cannot be reached at all.
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+
+            var panel = _host.Screen.Generate;
+            // The sheet is stretched to the canvas, so sizeDelta alone would *grow* it. Pin
+            // the anchors first to get a genuinely small window.
+            var root = (RectTransform)panel.transform;
+            root.anchorMin = new Vector2(0.5f, 0.5f);
+            root.anchorMax = new Vector2(0.5f, 0.5f);
+            root.sizeDelta = new Vector2(1000f, 520f);
+            Canvas.ForceUpdateCanvases();
+            yield return LetUiCatchUp();
+
+            Assert.That(panel.ContentHeight, Is.GreaterThan(0f), "the sheet never laid out");
+            Assert.That(panel.NeedsScrolling, Is.True,
+                "the form fits a 520-point window, so this test is no longer testing anything");
+
+            var scroll = panel.GetComponentInChildren<ScrollRect>(true);
+            Assert.That(scroll, Is.Not.Null, "there is no way to scroll to the lower controls");
+            Assert.That(scroll.enabled, Is.True, "scrolling is switched off while it is needed");
+            Assert.That(scroll.vertical, Is.True);
+        }
+
+        [UnityTest]
+        public IEnumerator ATallWindowDoesNotScroll()
+        {
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+
+            var panel = _host.Screen.Generate;
+            var root = (RectTransform)panel.transform;
+            root.anchorMin = new Vector2(0.5f, 0.5f);
+            root.anchorMax = new Vector2(0.5f, 0.5f);
+            root.sizeDelta = new Vector2(1440f, 900f);
+            Canvas.ForceUpdateCanvases();
+            yield return LetUiCatchUp();
+
+            Assert.That(panel.ContentHeight, Is.GreaterThan(0f), "the sheet never laid out");
+            Assert.That(panel.NeedsScrolling, Is.False,
+                $"the form needs {panel.ContentHeight:0} points and does not fit a 1440x900 "
+                + "window, which is the size the deck is designed for");
+        }
+
+        [UnityTest]
+        public IEnumerator TheSheetWalksFromStoppedThroughStartingToReady()
+        {
+            // The real-machine report was that it stayed at Stopped for ever. The bridge's
+            // side of that is fixed in Python; this is the deck's side of the same walk.
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+
+            _bridge.Push(GeneratorState.Stopped, "The generator is stopped.");
+            yield return LetUiCatchUp();
+            Assert.That(((AIDeck.UI.ITouchTarget)FindButton("StartServer")).TouchEnabled, Is.True,
+                "START AI SERVER must be offered while the generator is stopped");
+
+            Click(FindButton("StartServer"));
+            yield return LetUiCatchUp();
+            Assert.That(_bridge.Calls, Does.Contain("start"));
+
+            _bridge.Push(GeneratorState.Starting, "Loading models.");
+            yield return LetUiCatchUp();
+            Assert.That(((AIDeck.UI.ITouchTarget)FindButton("GenerateNow")).TouchEnabled, Is.False,
+                "GENERATE must stay closed while the models are still loading");
+
+            _bridge.Push(GeneratorState.Ready, "Ready.");
+            yield return LetUiCatchUp();
+            Assert.That(((AIDeck.UI.ITouchTarget)FindButton("GenerateNow")).TouchEnabled, Is.True,
+                "GENERATE never opened although the generator reported ready");
         }
 
         private IEnumerator LoadAndPlayDeckA()

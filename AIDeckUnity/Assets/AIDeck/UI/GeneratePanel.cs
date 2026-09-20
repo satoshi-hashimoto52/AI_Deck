@@ -33,7 +33,30 @@ namespace AIDeck.UI
         /// <summary>Raised when the finished track should go onto a deck.</summary>
         public event Action<DeckId> LoadCompletedRequested;
 
+        /// <summary>
+        /// The sheet's own type scale, in reference-resolution points (1440×900, match height).
+        ///
+        /// Deliberately not <see cref="Theme"/>'s sizes. Those are tuned for a dense deck
+        /// surface that is read at a glance and mostly recognised by shape and colour; this is
+        /// a form, read word by word, and at Theme's 10–13 pt it was reported as unreadable on
+        /// the actual machine. Changing Theme would have moved every label on the deck, which
+        /// is not what was wrong.
+        /// </summary>
+        private const int TitleSize = 23;
+        private const int StateSize = 18;
+        private const int BodySize = 16;
+        private const int WarningSize = 15;
+        private const int FieldLabelSize = 14;
+        private const int FieldTextSize = 16;
+        private const int ButtonSize = 15;
+
+        /// <summary>Smallest size anywhere on this sheet. Asserted by a test.</summary>
+        public const int MinimumFontSize = 14;
+
         private RectTransform _card;
+        private RectTransform _viewport;
+        private RectTransform _content;
+        private ScrollRect _scroll;
         private Text _title;
         private Text _stateLine;
         private Text _messageLine;
@@ -89,26 +112,48 @@ namespace AIDeck.UI
 
             _card = UiFactory.CreatePanel("Card", root, Theme.Panel, Theme.Line);
 
-            _title = UiFactory.CreateText("Title", _card, "Generate a track on this Mac",
-                Theme.FontSizeLarge, TextAnchor.MiddleLeft, Theme.Text, FontStyle.Bold);
+            // The card scrolls. At readable type the form is taller than a 900-point window
+            // once the warning wraps, and a control the user cannot reach is worse than a
+            // small one. Clamped, vertical only: this is a form, not a map.
+            _viewport = UiFactory.Create("Viewport", _card);
+            var viewportImage = _viewport.gameObject.AddComponent<Image>();
+            viewportImage.color = new Color(0f, 0f, 0f, 0f);
+            viewportImage.raycastTarget = true;   // the scroll wheel needs something to hit
+            _viewport.gameObject.AddComponent<RectMask2D>();
 
-            _stateLine = UiFactory.CreateText("State", _card, "Not connected",
-                Theme.FontSizeBody, TextAnchor.MiddleLeft, Theme.TextDim);
+            _content = UiFactory.Create("Content", _viewport);
 
-            _messageLine = UiFactory.CreateText("Message", _card, string.Empty,
-                Theme.FontSizeSmall, TextAnchor.UpperLeft, Theme.TextDim);
+            _scroll = _card.gameObject.AddComponent<ScrollRect>();
+            _scroll.viewport = _viewport;
+            _scroll.content = _content;
+            _scroll.horizontal = false;
+            _scroll.vertical = true;
+            _scroll.movementType = ScrollRect.MovementType.Clamped;
+            _scroll.scrollSensitivity = 24f;
+            _scroll.inertia = false;
+
+            _title = UiFactory.CreateText("Title", _content, "Generate a track on this Mac",
+                TitleSize, TextAnchor.MiddleLeft, Theme.Text, FontStyle.Bold);
+
+            _stateLine = UiFactory.CreateText("State", _content, "Not connected",
+                StateSize, TextAnchor.MiddleLeft, Theme.TextDim);
+
+            _messageLine = UiFactory.CreateText("Message", _content, string.Empty,
+                BodySize, TextAnchor.UpperLeft, Theme.TextDim);
             _messageLine.horizontalOverflow = HorizontalWrapMode.Wrap;
-            _messageLine.verticalOverflow = VerticalWrapMode.Truncate;
+            _messageLine.verticalOverflow = VerticalWrapMode.Overflow;
 
             // Said before anything is pressed, not after it hurts. Both numbers are measured
             // on this machine and are in docs/GENERATOR_PHASE1.md.
-            _warningLine = UiFactory.CreateText("Warning", _card,
+            _warningLine = UiFactory.CreateText("Warning", _content,
                 "The first start loads about 10 GB and takes a few minutes. On 16 GB this "
                 + "swaps heavily — around 19 GB during a 30-second track — so stop the decks "
                 + "before generating.",
-                Theme.FontSizeSmall, TextAnchor.UpperLeft, Theme.Warning);
+                WarningSize, TextAnchor.UpperLeft, Theme.Warning);
             _warningLine.horizontalOverflow = HorizontalWrapMode.Wrap;
-            _warningLine.verticalOverflow = VerticalWrapMode.Truncate;
+            // Overflow rather than Truncate: the layout measures this label and gives it the
+            // height it asks for, so clipping it would only ever hide the warning.
+            _warningLine.verticalOverflow = VerticalWrapMode.Overflow;
 
             _titleField = BuildField("TitleField", "Track title", "Neon Highway Phase 2");
             _promptField = BuildField("PromptField", "Style / description", DefaultPrompt);
@@ -119,16 +164,18 @@ namespace AIDeck.UI
             _languageField = BuildField("LanguageField", "Vocal language", "ja");
             _seedField = BuildField("SeedField", "Seed (optional)", string.Empty);
 
-            _fieldError = UiFactory.CreateText("FieldError", _card, string.Empty,
-                Theme.FontSizeSmall, TextAnchor.MiddleLeft, Theme.Danger);
+            _fieldError = UiFactory.CreateText("FieldError", _content, string.Empty,
+                BodySize, TextAnchor.UpperLeft, Theme.Danger);
+            _fieldError.horizontalOverflow = HorizontalWrapMode.Wrap;
+            _fieldError.verticalOverflow = VerticalWrapMode.Overflow;
 
             // A latched button rather than a new widget type: MUTE and ECHO already mean
             // "on" by sitting in Active, so this reads the same way to a user and to a test.
             _stopAfterToggle = MakeButton("StopAfter", StopAfterLabel(true), ToggleStopAfter);
             _stopAfterToggle.State = ButtonVisualState.Active;
 
-            _resultLine = UiFactory.CreateText("Result", _card, string.Empty,
-                Theme.FontSizeSmall, TextAnchor.MiddleLeft, Theme.Ok);
+            _resultLine = UiFactory.CreateText("Result", _content, string.Empty,
+                BodySize, TextAnchor.MiddleLeft, Theme.Ok);
 
             _startServerButton = MakeButton("StartServer", "START AI SERVER",
                 () => StartServerRequested?.Invoke());
@@ -169,7 +216,7 @@ namespace AIDeck.UI
 
         private ButtonWidget MakeButton(string name, string label, Action clicked)
         {
-            var button = ButtonWidget.Create(name, _card, label, _router, null, Theme.FontSizeSmall);
+            var button = ButtonWidget.Create(name, _content, label, _router, null, ButtonSize);
             button.Clicked += clicked;
             _buttons.Add(button);
             return button;
@@ -177,11 +224,11 @@ namespace AIDeck.UI
 
         private InputField BuildField(string name, string label, string initial, bool multiline = false)
         {
-            var labelText = UiFactory.CreateText(name + "Label", _card, label,
-                Theme.FontSizeSmall, TextAnchor.MiddleLeft, Theme.TextDim);
+            var labelText = UiFactory.CreateText(name + "Label", _content, label,
+                FieldLabelSize, TextAnchor.MiddleLeft, Theme.TextDim);
             labelText.name = name + "Label";
 
-            var field = UiFactory.Create(name, _card);
+            var field = UiFactory.Create(name, _content);
             var background = field.gameObject.AddComponent<Image>();
             background.color = Theme.PanelRaised;
             var outline = field.gameObject.AddComponent<Outline>();
@@ -189,12 +236,12 @@ namespace AIDeck.UI
             outline.effectDistance = new Vector2(1f, 1f);
             outline.useGraphicAlpha = false;
 
-            var text = UiFactory.CreateText("Text", field, string.Empty, Theme.FontSizeLabel);
+            var text = UiFactory.CreateText("Text", field, string.Empty, FieldTextSize);
             UiFactory.Stretch(text.rectTransform, 8f, 4f, 8f, 4f);
             text.alignment = multiline ? TextAnchor.UpperLeft : TextAnchor.MiddleLeft;
 
             var placeholder = UiFactory.CreateText("Placeholder", field, label,
-                Theme.FontSizeLabel, multiline ? TextAnchor.UpperLeft : TextAnchor.MiddleLeft,
+                FieldTextSize, multiline ? TextAnchor.UpperLeft : TextAnchor.MiddleLeft,
                 Theme.TextDim);
             UiFactory.Stretch(placeholder.rectTransform, 8f, 4f, 8f, 4f);
 
@@ -264,8 +311,13 @@ namespace AIDeck.UI
                 _messageLine.color = Theme.Danger;
             }
 
-            var completed = status.State == GeneratorState.Completed
-                            && !string.IsNullOrEmpty(status.CompletedFileName);
+            // Tied to "there is a finished track", not to the Completed state itself. With
+            // "stop the AI server after generating" on — the default — the state moves
+            // Completed → Stopped within a second or two, and keying the buttons off the state
+            // made LOAD TO A vanish before it could be pressed. The bridge keeps reporting the
+            // result until the next generation starts, so that is what to ask.
+            var completed = !string.IsNullOrEmpty(status.CompletedFileName)
+                            && !status.State.IsBusy();
             _resultLine.text = completed
                 ? $"Added: {status.CompletedFileName} ({status.CompletedDurationSeconds:0.0} s)"
                 : string.Empty;
@@ -348,58 +400,68 @@ namespace AIDeck.UI
                 return;
             }
 
-            const float pad = 20f;
-            const float gap = 8f;
-            const float rowHeight = 30f;
-            const float labelHeight = 15f;
+            const float pad = 22f;
+            const float gap = 10f;
+            const float rowHeight = 34f;
+            const float labelHeight = 19f;
 
-            var cardWidth = Mathf.Min(760f, width - 80f);
-            var cardHeight = Mathf.Min(760f, height - 40f);
+            var cardWidth = Mathf.Min(820f, width - 60f);
+            var cardHeight = Mathf.Min(860f, height - 40f);
             _card.anchorMin = new Vector2(0.5f, 0.5f);
             _card.anchorMax = new Vector2(0.5f, 0.5f);
             _card.pivot = new Vector2(0.5f, 0.5f);
             _card.sizeDelta = new Vector2(cardWidth, cardHeight);
             _card.anchoredPosition = Vector2.zero;
 
+            UiFactory.Stretch(_viewport, 0f, 0f, 0f, 0f);
+
             var inner = cardWidth - pad * 2f;
             var y = pad;
 
-            UiFactory.Place(_title.rectTransform, pad, y, inner, 26f);
-            y += 28f;
-            UiFactory.Place(_stateLine.rectTransform, pad, y, inner, 20f);
-            y += 22f;
-            UiFactory.Place(_messageLine.rectTransform, pad, y, inner, 34f);
-            y += 36f;
-            UiFactory.Place(_warningLine.rectTransform, pad, y, inner, 44f);
-            y += 48f;
+            UiFactory.Place(_title.rectTransform, pad, y, inner, TitleSize + 10f);
+            y += TitleSize + 14f;
+            UiFactory.Place(_stateLine.rectTransform, pad, y, inner, StateSize + 8f);
+            y += StateSize + 12f;
+
+            // Measured rather than guessed: the warning is three lines at one width and two at
+            // another, and a fixed height either clips it or leaves a hole above the fields.
+            var messageHeight = WrappedHeight(_messageLine, inner, BodySize);
+            UiFactory.Place(_messageLine.rectTransform, pad, y, inner, messageHeight);
+            y += messageHeight + 6f;
+
+            var warningHeight = WrappedHeight(_warningLine, inner, WarningSize);
+            UiFactory.Place(_warningLine.rectTransform, pad, y, inner, warningHeight);
+            y += warningHeight + gap;
 
             y = PlaceField(_titleField, "TitleField", pad, y, inner, rowHeight, labelHeight, gap);
-            y = PlaceField(_promptField, "PromptField", pad, y, inner, rowHeight, labelHeight, gap);
-            y = PlaceField(_lyricsField, "LyricsField", pad, y, inner, 66f, labelHeight, gap);
+            y = PlaceField(_promptField, "PromptField", pad, y, inner, rowHeight * 2f, labelHeight, gap);
+            y = PlaceField(_lyricsField, "LyricsField", pad, y, inner, 84f, labelHeight, gap);
 
-            // Four short numeric boxes on one row.
+            // Four short boxes on one row.
             var quarter = (inner - gap * 3f) / 4f;
             PlaceLabel("DurationFieldLabel", pad, y, quarter, labelHeight);
             PlaceLabel("BpmFieldLabel", pad + quarter + gap, y, quarter, labelHeight);
             PlaceLabel("KeyFieldLabel", pad + (quarter + gap) * 2f, y, quarter, labelHeight);
             PlaceLabel("SeedFieldLabel", pad + (quarter + gap) * 3f, y, quarter, labelHeight);
-            y += labelHeight + 2f;
+            y += labelHeight + 3f;
             UiFactory.Place((RectTransform)_durationField.transform, pad, y, quarter, rowHeight);
             UiFactory.Place((RectTransform)_bpmField.transform, pad + quarter + gap, y, quarter, rowHeight);
             UiFactory.Place((RectTransform)_keyField.transform, pad + (quarter + gap) * 2f, y, quarter, rowHeight);
             UiFactory.Place((RectTransform)_seedField.transform, pad + (quarter + gap) * 3f, y, quarter, rowHeight);
             y += rowHeight + gap;
 
-            y = PlaceField(_languageField, "LanguageFieldLabel", pad, y, quarter, rowHeight, labelHeight, gap);
+            y = PlaceField(_languageField, "LanguageFieldLabel", pad, y, quarter * 2f,
+                rowHeight, labelHeight, gap);
 
-            UiFactory.Place(_fieldError.rectTransform, pad, y, inner, 18f);
-            y += 20f;
+            var errorHeight = WrappedHeight(_fieldError, inner, BodySize);
+            UiFactory.Place(_fieldError.rectTransform, pad, y, inner, errorHeight);
+            y += errorHeight + 6f;
 
-            UiFactory.Place(_stopAfterToggle.Rect, pad, y, inner, 26f);
-            y += 30f;
+            UiFactory.Place(_stopAfterToggle.Rect, pad, y, inner, Theme.TouchSize);
+            y += Theme.TouchSize + gap;
 
-            UiFactory.Place(_resultLine.rectTransform, pad, y, inner, 18f);
-            y += 22f;
+            UiFactory.Place(_resultLine.rectTransform, pad, y, inner, BodySize + 8f);
+            y += BodySize + 14f;
 
             var buttonWidth = (inner - gap * 2f) / 3f;
             UiFactory.Place(_startServerButton.Rect, pad, y, buttonWidth, Theme.TouchSize);
@@ -412,6 +474,57 @@ namespace AIDeck.UI
             UiFactory.Place(_loadBButton.Rect, pad + buttonWidth + gap + buttonWidth * 0.52f, y,
                 buttonWidth * 0.48f, Theme.TouchSize);
             UiFactory.Place(_closeButton.Rect, pad + (buttonWidth + gap) * 2f, y, buttonWidth, Theme.TouchSize);
+            y += Theme.TouchSize + pad;
+
+            ContentHeight = y;
+
+            // Anchored to the top so growing downwards scrolls rather than re-centres.
+            _content.anchorMin = new Vector2(0f, 1f);
+            _content.anchorMax = new Vector2(1f, 1f);
+            _content.pivot = new Vector2(0.5f, 1f);
+            _content.offsetMin = new Vector2(0f, 0f);
+            _content.offsetMax = new Vector2(0f, 0f);
+            _content.sizeDelta = new Vector2(0f, y);
+
+            NeedsScrolling = y > cardHeight + 0.5f;
+            if (_scroll != null)
+            {
+                _scroll.enabled = NeedsScrolling;
+                if (!NeedsScrolling)
+                {
+                    _content.anchoredPosition = Vector2.zero;
+                }
+            }
+        }
+
+        /// <summary>Total height of the laid-out form. Larger than the card means it scrolls.</summary>
+        public float ContentHeight { get; private set; }
+
+        /// <summary>Whether the form is taller than the card and the user must scroll.</summary>
+        public bool NeedsScrolling { get; private set; }
+
+        /// <summary>
+        /// Height a wrapping label needs at this width.
+        ///
+        /// <c>Text.preferredHeight</c> is only meaningful once the rect is the width the text
+        /// will wrap at, so the width is applied first and the answer read back.
+        /// </summary>
+        private static float WrappedHeight(Text label, float width, int fontSize)
+        {
+            if (label == null)
+            {
+                return 0f;
+            }
+
+            if (string.IsNullOrEmpty(label.text))
+            {
+                return 0f;
+            }
+
+            var rect = label.rectTransform;
+            rect.sizeDelta = new Vector2(width, rect.sizeDelta.y);
+            var preferred = label.preferredHeight;
+            return Mathf.Max(fontSize + 6f, preferred + 4f);
         }
 
         private float PlaceField(
@@ -427,7 +540,7 @@ namespace AIDeck.UI
 
         private void PlaceLabel(string name, float x, float y, float width, float height)
         {
-            var label = _card.Find(name) as RectTransform;
+            var label = _content.Find(name) as RectTransform;
             if (label != null)
             {
                 UiFactory.Place(label, x, y, width, height);
