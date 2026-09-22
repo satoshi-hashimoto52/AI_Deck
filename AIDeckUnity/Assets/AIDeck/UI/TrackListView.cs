@@ -24,6 +24,26 @@ namespace AIDeck.UI
         private readonly List<TrackInfo> _visible = new List<TrackInfo>();
 
         private RectTransform _content;
+        private RectTransform _viewport;
+        private Image _scrollTrack;
+        private Image _scrollHandle;
+
+        /// <summary>Width of the scroll indicator, in reference points.</summary>
+        private const float ScrollBarWidth = 4f;
+
+        /// <summary>
+        /// How far a finger may travel on a load button before it counts as a scroll.
+        ///
+        /// The same figure <see cref="RowHitArea"/> uses to tell a tap from a drag, so the two
+        /// cannot disagree about which gesture happened.
+        /// </summary>
+        private const float RowDragTolerance = 10f;
+
+        /// <summary>Pixels of list movement per notch of the wheel.</summary>
+        private const float WheelStep = 48f;
+
+        /// <summary>How far down the list we are, in pixels. Zero is the first track.</summary>
+        private float _scrollOffset;
         private InputField _search;
         private Text _emptyLabel;
         private TouchRouter _router;
@@ -107,33 +127,177 @@ namespace AIDeck.UI
             var scrollRoot = UiFactory.Create("Scroll", root);
             UiFactory.Stretch(scrollRoot, 0f, SearchHeight + 6f, 0f, 0f);
 
-            var scroll = scrollRoot.gameObject.AddComponent<ScrollRect>();
-            scroll.horizontal = false;
-            scroll.vertical = true;
-            scroll.movementType = ScrollRect.MovementType.Elastic;
-            scroll.scrollSensitivity = 24f;
+            // No ScrollRect. It needs the EventSystem to deliver scroll and drag, and this
+            // control surface deliberately does not use the EventSystem — TouchRouter reads
+            // input directly so that several fingers work at once and a cancelled touch can
+            // release what it held (FR-071, FR-073). The ScrollRect that used to be here was
+            // wired to a viewport with no raycast target and to rows that swallowed their own
+            // drag, so nothing ever reached it and the list could not be scrolled at all.
+            //
+            // Driving the content offset from the router keeps one input path for the whole
+            // surface, and makes the behaviour reachable from a PlayMode test.
+            _viewport = UiFactory.Create("Viewport", scrollRoot);
+            _viewport.gameObject.AddComponent<RectMask2D>();
 
-            var viewport = UiFactory.Create("Viewport", scrollRoot);
-            viewport.gameObject.AddComponent<RectMask2D>();
-            scroll.viewport = viewport;
-
-            _content = UiFactory.Create("Content", viewport);
+            _content = UiFactory.Create("Content", _viewport);
             _content.anchorMin = new Vector2(0f, 1f);
             _content.anchorMax = new Vector2(1f, 1f);
             _content.pivot = new Vector2(0.5f, 1f);
             _content.sizeDelta = new Vector2(0f, 0f);
-            scroll.content = _content;
+
+            BuildScrollBar(scrollRoot);
 
             _emptyLabel = UiFactory.CreateText(
                 "Empty", scrollRoot, "No tracks yet.", Theme.FontSizeBody,
                 TextAnchor.MiddleCenter, Theme.TextDim);
         }
 
+        /// <summary>A thin indicator, so it is obvious there is more list below the fold.</summary>
+        private void BuildScrollBar(RectTransform scrollRoot)
+        {
+            _scrollTrack = UiFactory.CreateImage("ScrollTrack", scrollRoot, Theme.Line);
+            var track = _scrollTrack.rectTransform;
+            track.anchorMin = new Vector2(1f, 0f);
+            track.anchorMax = new Vector2(1f, 1f);
+            track.pivot = new Vector2(1f, 1f);
+            track.offsetMin = new Vector2(-ScrollBarWidth, 2f);
+            track.offsetMax = new Vector2(0f, -2f);
+            _scrollTrack.raycastTarget = false;
+
+            _scrollHandle = UiFactory.CreateImage("ScrollHandle", track, Theme.KnobEdge);
+            var handle = _scrollHandle.rectTransform;
+            handle.anchorMin = new Vector2(0f, 1f);
+            handle.anchorMax = new Vector2(1f, 1f);
+            handle.pivot = new Vector2(0.5f, 1f);
+            _scrollHandle.raycastTarget = false;
+        }
+
+        /// <summary>
+        /// Sets the search text as if it had been typed.
+        ///
+        /// Goes through the field so the box on screen and the filter can never disagree, and
+        /// so the reset-to-top that a new search performs happens here too.
+        /// </summary>
+        public void SetQuery(string query)
+        {
+            if (_search != null)
+            {
+                _search.text = query ?? string.Empty;   // raises onValueChanged
+                return;
+            }
+
+            OnSearchChanged(query);
+        }
+
         private void OnSearchChanged(string value)
         {
             _query = value ?? string.Empty;
             QueryChanged?.Invoke(_query);
+
+            // A new search shows a different list; staying at the old offset would open it
+            // somewhere in the middle, or past the end of a shorter result.
+            _scrollOffset = 0f;
             Refresh();
+        }
+
+        // ---------------------------------------------------------------- scrolling
+
+        /// <summary>Height of the list that is off-screen. Zero when everything fits.</summary>
+        public float MaxScroll =>
+            Mathf.Max(0f, _visible.Count * RowHeight - ViewportHeight);
+
+        private float ViewportHeight =>
+            _viewport == null ? 0f : _viewport.rect.height;
+
+        /// <summary>How far down the list we are, in pixels. Zero is the first track.</summary>
+        public float ScrollOffset => _scrollOffset;
+
+        /// <summary>Moves the list by a number of pixels. Positive reveals later tracks.</summary>
+        public void ScrollBy(float pixels) => ApplyScroll(_scrollOffset + pixels);
+
+        /// <summary>Back to the first track.</summary>
+        public void ScrollToTop() => ApplyScroll(0f);
+
+        /// <summary>
+        /// One wheel or trackpad notch.
+        ///
+        /// Public so a test can drive it: <c>Input.mouseScrollDelta</c> cannot be set, and the
+        /// thing worth testing is that a notch moves the list, not that Unity reports notches.
+        ///
+        /// The sign is uGUI's, deliberately: <c>ScrollRect.OnScroll</c> does
+        /// <c>anchoredPosition += -scrollDelta.y * sensitivity</c>, so turning a wheel or
+        /// pushing a trackpad here moves the library the same way it moves every other scroll
+        /// view in the app — including the generation sheet, a few pixels to the right. Copying
+        /// the convention is the only way to get it right on a platform where the natural
+        /// scrolling setting can invert what the hardware reports.
+        /// </summary>
+        public void ScrollByWheel(float notches) => ScrollBy(-notches * WheelStep);
+
+        private void ApplyScroll(float offset)
+        {
+            // Clamped rather than elastic: overscrolling a library list past its ends only
+            // ever shows empty space where tracks should be.
+            _scrollOffset = Mathf.Clamp(offset, 0f, MaxScroll);
+
+            if (_content != null)
+            {
+                _content.anchoredPosition = new Vector2(_content.anchoredPosition.x, _scrollOffset);
+            }
+
+            UpdateScrollBar();
+        }
+
+        private void UpdateScrollBar()
+        {
+            if (_scrollTrack == null || _scrollHandle == null)
+            {
+                return;
+            }
+
+            var contentHeight = _visible.Count * RowHeight;
+            var viewport = ViewportHeight;
+            var scrollable = MaxScroll > 0.5f && viewport > 1f;
+
+            _scrollTrack.gameObject.SetActive(scrollable);
+            if (!scrollable)
+            {
+                return;
+            }
+
+            var trackHeight = _scrollTrack.rectTransform.rect.height;
+            var handleHeight = Mathf.Max(24f, trackHeight * (viewport / contentHeight));
+            var travel = trackHeight - handleHeight;
+
+            var handle = _scrollHandle.rectTransform;
+            handle.sizeDelta = new Vector2(0f, handleHeight);
+            handle.anchoredPosition = new Vector2(0f, -travel * (_scrollOffset / MaxScroll));
+        }
+
+        /// <summary>
+        /// Wheel and trackpad, read straight from <c>Input</c> like the rest of this surface.
+        ///
+        /// Only when the pointer is actually over the list, so turning the wheel above a deck
+        /// does not move the library, and only while the window has focus — the same rule the
+        /// router applies, for the same reason.
+        /// </summary>
+        private void Update()
+        {
+            if (_viewport == null || _router == null || !_router.HasFocus)
+            {
+                return;
+            }
+
+            var notches = Input.mouseScrollDelta.y;
+            if (Mathf.Approximately(notches, 0f))
+            {
+                return;
+            }
+
+            if (RectTransformUtility.RectangleContainsScreenPoint(
+                    _viewport, Input.mousePosition, _router.UiCamera))
+            {
+                ScrollByWheel(notches);
+            }
         }
 
         /// <summary>Replaces the backing list. Call whenever the library revision changes.</summary>
@@ -214,6 +378,12 @@ namespace AIDeck.UI
             }
 
             _content.sizeDelta = new Vector2(0f, _visible.Count * RowHeight);
+
+            // Clamped after every rebuild: removing tracks, or narrowing a search, can leave
+            // the offset pointing past the end, and an empty list scrolled to nowhere is how a
+            // library looks like it has lost everything.
+            ApplyScroll(_scrollOffset);
+
             _emptyLabel.gameObject.SetActive(_visible.Count == 0);
             _emptyLabel.text = _source.Count == 0
                 ? "No tracks yet. Add MP3, WAV or AIFF files."
@@ -248,6 +418,11 @@ namespace AIDeck.UI
             row.Hit = rootRect.gameObject.AddComponent<RowHitArea>();
             row.Hit.TouchPriority = 0;
             row.Hit.Bind(_router);
+
+            // The row is what the finger is on, so the row is what reports the scroll. This is
+            // the whole Mac-drag and iPad-one-finger path: the router gives the press to the
+            // row, and the row hands the movement on instead of dropping it.
+            row.Hit.DraggedBy += ScrollBy;
             row.Hit.Tapped += () =>
             {
                 if (row.Track == null)
@@ -270,6 +445,15 @@ namespace AIDeck.UI
             // The load buttons sit on top of the row, so they must win the hit test.
             row.LoadA.TouchPriority = 10;
             row.LoadB.TouchPriority = 10;
+
+            // A drag that happens to begin on A or B is still a scroll. Without this the
+            // buttons cover most of the row's right-hand side and starting there would either
+            // do nothing or, worse, load a track on release.
+            foreach (var button in new[] { row.LoadA, row.LoadB })
+            {
+                button.DragCancelDistance = RowDragTolerance;
+                button.DraggedBy += ScrollBy;
+            }
 
             row.LoadA.Clicked += () =>
             {

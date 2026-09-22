@@ -8,6 +8,37 @@ Requirement IDs refer to
 
 ## [Unreleased]
 
+### Fixed — the track list could not be scrolled (2026-09-22)
+
+Reported from the Mac build: the library overflowed its panel, neither the wheel, the trackpad
+nor a drag moved it, and every track past the fifth was unreachable — so it could not be loaded
+to a deck at all. The same view is the iPad controller's library, so the fault was on both
+surfaces.
+
+* **The `ScrollRect` was never going to work here.** It receives scroll and drag through the
+  `EventSystem`, and this control surface deliberately does not use one: `TouchRouter` reads
+  `Input` directly so that several fingers work at once and a cancelled touch releases what it
+  held (FR-071, FR-073). The viewport had only a `RectMask2D` — no `raycastTarget` graphic —
+  so nothing was delivered, and `RowHitArea.OnDragged` threw the drag distance away after using
+  it to decide the press had moved. The comment claiming "the list scrolls" was the only part
+  of the feature that existed.
+* **Scrolling now goes through the router, like every other control on this surface.** The
+  view owns its offset, clamps it to the content, and moves the content rect itself. A row drag
+  scrolls the list and does not select the row; a drag that starts on **A** or **B** scrolls and
+  does not load a track, while a short tap on either still loads exactly once. Deck controls are
+  unaffected: `ButtonWidget.DragCancelDistance` defaults to zero, so a jog or fader that is
+  dragged still fires.
+* **The wheel and trackpad use uGUI's sign**, copied from `ScrollRect.OnScroll`, so the library
+  turns the same way as the generation sheet a few pixels to its right — the only way to be right
+  on a platform where the natural scrolling setting can invert what the hardware reports.
+* **Both ends hold.** The offset is clamped rather than elastic, changing the search returns to
+  the first track, removing tracks cannot leave the list scrolled past the end, and a library
+  that fits the panel does not move at all.
+* **A 4 px indicator** appears on the right only while there is more to see, sized to the
+  fraction of the library on screen.
+* Thirteen PlayMode tests drive the real `TouchRouter` — mouse, injected pointer and the
+  `Touch` path an iPad actually takes — rather than calling the view's methods.
+
 ### Fixed — Phase 2 state sync and polling load (2026-09-22)
 
 * **The sheet said "Starting — loading models" while everything else said ready.** The bridge

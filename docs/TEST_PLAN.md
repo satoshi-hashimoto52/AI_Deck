@@ -258,12 +258,12 @@ reason the auto-connect rule exists.
 
 ### Phase 4 verification performed this way
 
-Suite totals (updated after the Phase 5 Mac defect fix):
+Suite totals (updated after the track-list scrolling fix):
 
 | Suite | Tests | Passed | Failed |
 | --- | --- | --- | --- |
 | EditMode | 386 | 386 | 0 |
-| PlayMode | 134 | 134 | 0 |
+| PlayMode | 147 | 147 | 0 |
 | 30-minute soak (opt-in) | 1 | 1 | 0 |
 
 Compiler warnings: 0. Not run: the on-device tests M1–M8 below, and the real-LAN latency

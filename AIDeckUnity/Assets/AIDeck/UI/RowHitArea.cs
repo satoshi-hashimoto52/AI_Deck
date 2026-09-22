@@ -18,21 +18,41 @@ namespace AIDeck.UI
         private const float DragTolerance = 10f;
 
         private Vector2 _pressPosition;
+        private Vector2 _lastPosition;
         private bool _moved;
 
         public event Action Tapped;
 
+        /// <summary>
+        /// Raised with the vertical movement since the last report, in screen pixels.
+        ///
+        /// The row is the thing under the finger, so the row is the only thing that can see a
+        /// scroll gesture. Before this the drag was noticed — enough to suppress the tap — and
+        /// then thrown away, so the list could not be scrolled at all while the comment above
+        /// claimed it could.
+        /// </summary>
+        public event Action<float> DraggedBy;
+
         protected override void OnPressed(Vector2 screenPosition)
         {
             _pressPosition = screenPosition;
+            _lastPosition = screenPosition;
             _moved = false;
         }
 
         protected override void OnDragged(Vector2 screenPosition)
         {
+            var step = screenPosition.y - _lastPosition.y;
+            _lastPosition = screenPosition;
+
             if ((screenPosition - _pressPosition).sqrMagnitude > DragTolerance * DragTolerance)
             {
                 _moved = true;
+            }
+
+            if (step != 0f)
+            {
+                DraggedBy?.Invoke(step);
             }
         }
 

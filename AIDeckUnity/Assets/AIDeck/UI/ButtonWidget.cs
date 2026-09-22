@@ -116,17 +116,66 @@ namespace AIDeck.UI
             return widget;
         }
 
+        /// <summary>
+        /// How far the finger may travel before the press stops counting as a click, or zero
+        /// to never cancel.
+        ///
+        /// Off by default: a deck control should fire even if the finger shifts a little,
+        /// because a transport button is aimed at and held, not swiped. It is switched on for
+        /// buttons that sit inside a scrolling list, where a drag that starts on A or B is a
+        /// scroll and must not load a track.
+        /// </summary>
+        public float DragCancelDistance { get; set; }
+
+        /// <summary>Vertical movement since the last report, when <see cref="DragCancelDistance"/> is set.</summary>
+        public event Action<float> DraggedBy;
+
+        private Vector2 _pressPosition;
+        private Vector2 _lastDragPosition;
+        private bool _dragCancelled;
+
         protected override void OnPressed(Vector2 screenPosition)
         {
+            _pressPosition = screenPosition;
+            _lastDragPosition = screenPosition;
+            _dragCancelled = false;
             Refresh();
             HeldChanged?.Invoke(true);
+        }
+
+        protected override void OnDragged(Vector2 screenPosition)
+        {
+            if (DragCancelDistance <= 0f)
+            {
+                return;
+            }
+
+            var step = screenPosition.y - _lastDragPosition.y;
+            _lastDragPosition = screenPosition;
+
+            if ((screenPosition - _pressPosition).sqrMagnitude > DragCancelDistance * DragCancelDistance)
+            {
+                _dragCancelled = true;
+                Refresh();
+            }
+
+            if (step != 0f)
+            {
+                DraggedBy?.Invoke(step);
+            }
         }
 
         protected override void OnReleased(Vector2 screenPosition)
         {
             Refresh();
             HeldChanged?.Invoke(false);
-            Clicked?.Invoke();
+
+            // A drag that began on this button was a scroll. Loading a track the user never
+            // asked for is the worst outcome available here, so the click is dropped.
+            if (!_dragCancelled)
+            {
+                Clicked?.Invoke();
+            }
         }
 
         protected override void OnCancelled()
