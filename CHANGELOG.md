@@ -8,6 +8,39 @@ Requirement IDs refer to
 
 ## [Unreleased]
 
+### Fixed — Phase 2 state sync and polling load (2026-09-22)
+
+* **The sheet said "Starting — loading models" while everything else said ready.** The bridge
+  overwrote the observed *state* without touching the message, so `/v1/state` answered
+  `state: ready` still carrying "Loading models. The first start takes minutes.", and the
+  panel — which is what the user reads — showed the stale half. State and message now move
+  together, and the internal progress record is updated with them.
+* **A missed notification stranded the panel for the session.** Display was push-only: one
+  dropped `StatusChanged` and the screen never caught up short of closing and reopening the
+  sheet. It now converges on the bridge's current value every frame, and re-lays out only when
+  the rendered signature changes, so an identical poll costs a string comparison.
+* **GENERATE's enable rule is stated once**, as `state.CanGenerate() && gate.IsAllowed`, with
+  the failing half's reason always on screen in words.
+* **Observing the engine spawned five processes a second.** `status_macos.sh` — bash, curl,
+  lsof, ps, python3 — ran on every `/v1/state`, once a second while loading, on a machine
+  already at 25 GB of swap. Observation is now a file test, a `kill -0` and one loopback
+  request, cached for two seconds: measured at 0.33 health requests per second and no child
+  processes. Stopping still goes through the PID-validating script.
+* **The deck now shows the machine's memory when it matters**: swap ≥ 20 GB or compressed
+  ≥ 6 GB replaces the standing warning with the live figures and a restart recommendation.
+* **`Tick()` called itself.** An over-broad text replacement while wiring the convergence tick
+  matched the body of `Tick` instead of the caller's, and the resulting recursion crashed the
+  player with a stack overflow on every PlayMode run.
+* **The poll's in-flight flag was cleared before the work, not after**, so `Update` started a
+  fresh poll coroutine every frame. It is a `try/finally` now, which is both exception-safe and
+  actually exclusive.
+* **`_probe_server` referenced a helper this module never imported**, so pressing START AI
+  SERVER answered `internal: NameError` while every test passed — the tests stubbed the probe.
+  There is now a test that runs the real probe with nothing mocked. The bridge's generic error
+  handler also reports the exception's message, not only its type: "internal: NameError" named
+  the category and nothing else.
+* Tests: EditMode 386, PlayMode 134 (+1 opt-in soak), Python 94.
+
 ### Fixed — Phase 2 audit, found on the Mac (2026-09-20)
 
 * **START AI SERVER did nothing and the sheet stayed at Stopped**, reporting

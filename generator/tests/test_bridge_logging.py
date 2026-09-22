@@ -23,7 +23,12 @@ from generator.aideck_generator.bridge import (
     redact,
 )
 
-from generator.tests.test_bridge import REAL_SCRIPTS, ScriptRunner, wait_for
+from generator.tests.test_bridge import (
+    REAL_SCRIPTS,
+    ScriptRunner,
+    pretend_engine_is_ready,
+    wait_for,
+)
 
 
 class BrokenStream:
@@ -104,13 +109,13 @@ class StartServerSurvivesLoggingTests(unittest.TestCase):
     """The operation that actually broke."""
 
     def _bridge(self, log):
-        return GeneratorBridge(
+        return pretend_engine_is_ready(GeneratorBridge(
             scripts_dir=REAL_SCRIPTS,
             output_dir=Path(tempfile.gettempdir()),
             client_factory=lambda: None,
-            runner=ScriptRunner(status_code=0),   # engine already ready
+            runner=ScriptRunner(status_code=0),
             log=log,
-        )
+        ))
 
     def test_start_server_succeeds_although_the_logger_raises(self):
         def exploding(_message):
@@ -174,13 +179,13 @@ class OrphanBridgeTests(unittest.TestCase):
         # An orphaned bridge that finds an engine running did not start it, so quitting must
         # leave it alone.
         runner = ScriptRunner(status_code=0)
-        bridge = GeneratorBridge(
+        bridge = pretend_engine_is_ready(GeneratorBridge(
             scripts_dir=REAL_SCRIPTS,
             output_dir=Path(tempfile.gettempdir()),
             client_factory=lambda: None,
             runner=runner,
             log=lambda _m: None,
-        )
+        ))
         bridge.start_server()
 
         bridge.shutdown()

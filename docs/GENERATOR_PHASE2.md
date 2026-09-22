@@ -86,6 +86,42 @@ directory is folded to `~`. A real line looks like
 "lyrics_length": 0, "duration_seconds": 30, "bpm": 118, ...}
 ```
 
+### Keeping the screen and the bridge in step
+
+The sheet **converges** on the bridge's current value every frame rather than waiting to be
+told. The push-only version left it reading "Starting — loading models" while ACE-Step, the
+bridge payload and the deck's own log all said ready; one missed notification and the screen
+never caught up, and the only way back was to close and reopen the sheet.
+
+Two things make that affordable:
+
+* the bridge keeps state and message together — `SERVER_STATE_MESSAGES` gives each server
+  state its sentence, and both are written whenever the observed state changes, so a payload
+  can no longer read `ready` while carrying "Loading models";
+* the panel re-lays out only when `GeneratorStatus.DisplaySignature` (plus the gate's verdict)
+  changes, so an identical poll costs one string comparison and no layout pass.
+
+GENERATE is offered when, and only when, `state.CanGenerate() && gate.IsAllowed` — the
+generator can start work *and* the decks are stopped, cue is off and nothing is recording.
+Whichever half fails puts its reason on the message line in words.
+
+### What observing the engine costs
+
+It used to shell out to `status_macos.sh` on **every** `/v1/state`: bash, curl, lsof, ps and
+python3, five processes, about once a second while the models load. On a Mac already at 25 GB
+of swap that is not a measurement, it is a contribution to the problem, and it filled the
+engine's own log with `GET /health`.
+
+The same three questions are now answered with no fork at all — a file test for "installed",
+`kill -0` for "alive", and one loopback request for "answering" — and the answer is cached for
+two seconds. Measured on the machine with the sheet open and the engine ready: **0.33 health
+requests per second and zero child processes**, against roughly five processes per second
+before.
+
+Stopping is unchanged. It still goes through `stop_macos.sh`, which validates a PID against
+the process's own command line, because signalling the wrong process is a different risk from
+misreading a status line.
+
 ### Process ownership
 
 Each arrow is an ownership **only if that side started the other**.
@@ -203,6 +239,32 @@ size they are literal. A test asserts every label on the sheet is at least 14.
 The warning is measured rather than given a fixed height — it is two lines at one card width
 and three at another — and the first input is placed below whatever it needed. When the form
 is taller than the card, which happens on a short window, the card scrolls.
+
+## Memory, measured rather than asserted
+
+The sheet shows the machine's own numbers when they are bad enough to act on: swap at or above
+20 GB, or compressed memory at or above 6 GB, replaces the standing guidance with a red line
+naming the figures and recommending a restart. Those thresholds come from the measured runs —
+a normal generation peaks near 19 GB, and the session that became unusable was at 25.5 GB with
+0.08 GB of RAM free.
+
+One 30-second generation on this 16 GB M1, measured on 2026-09-22:
+
+| Point | Swap used | Free RAM | Compressed | Engine RSS |
+| --- | --- | --- | --- | --- |
+| before starting the engine | 10.1 GB | 0.82 GB | 5.78 GB | — |
+| engine loaded, ready | 28.4 GB | 0.06 GB | 8.05 GB | 1.44 GB |
+| after STOP AI SERVER | 16.1 GB | **9.19 GB** | **0.37 GB** | — |
+
+Stopping the engine gave back 12.3 GB of swap, 9.1 GB of RAM and almost all of the compressed
+memory, and the deck went straight back to loading and playing tracks normally. Swap itself
+does not return to its starting figure until the machine is restarted, which is what the
+warning says.
+
+**Resident set size does not describe this load.** The engine's RSS peaked at 1.44 GB while the
+machine was at 28.4 GB of swap with 60 MB of RAM free. Most of a model's cost here is unified
+memory the kernel is compressing and paging, and none of it appears in one process's RSS —
+so `memory_report.sh`'s RSS column is a process figure, not a measure of what generating costs.
 
 ## Known limitations
 

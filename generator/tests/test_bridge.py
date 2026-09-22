@@ -94,6 +94,17 @@ class FakeClient:
 REAL_SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 
 
+def pretend_engine_is_ready(bridge):
+    """Make the bridge observe a ready engine.
+
+    Observation no longer shells out to status_macos.sh — it asks the engine's own /health on
+    loopback — so a test that wants "already running" has to say so where the bridge now looks.
+    """
+    bridge._engine_health = lambda: {"models_initialized": True}   # type: ignore[assignment]
+    bridge._observed_at = None
+    return bridge
+
+
 def bridge_with(runner=None, client=None, tmp="/tmp"):
     return GeneratorBridge(
         scripts_dir=REAL_SCRIPTS,
@@ -352,8 +363,8 @@ class BridgeStateTests(unittest.TestCase):
 
 class ProcessOwnershipTests(unittest.TestCase):
     def test_an_already_running_server_is_adopted_and_not_owned(self):
-        runner = ScriptRunner(status_code=0)   # already ready
-        bridge = bridge_with(runner=runner)
+        runner = ScriptRunner(status_code=0)
+        bridge = pretend_engine_is_ready(bridge_with(runner=runner))
 
         state = bridge.start_server()
 
@@ -363,7 +374,7 @@ class ProcessOwnershipTests(unittest.TestCase):
 
     def test_shutdown_does_not_stop_a_server_we_did_not_start(self):
         runner = ScriptRunner(status_code=0)
-        bridge = bridge_with(runner=runner)
+        bridge = pretend_engine_is_ready(bridge_with(runner=runner))
         bridge.start_server()
 
         bridge.shutdown()
@@ -382,7 +393,7 @@ class ProcessOwnershipTests(unittest.TestCase):
 
     def test_the_user_can_force_stop_an_adopted_server(self):
         runner = ScriptRunner(status_code=0)
-        bridge = bridge_with(runner=runner)
+        bridge = pretend_engine_is_ready(bridge_with(runner=runner))
         bridge.start_server()
 
         bridge.stop_server(force=True)

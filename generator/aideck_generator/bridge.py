@@ -22,6 +22,7 @@ import re
 import signal
 import subprocess
 import sys
+import urllib.request
 import threading
 import time
 from dataclasses import dataclass, field
@@ -29,7 +30,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from .client import AceStepClient, GenerationRequest
+from .client import AceStepClient, GenerationRequest, process_is_running
 from .errors import (
     GeneratorError,
     GeneratorNotReadyError,
@@ -38,6 +39,7 @@ from .errors import (
 
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8765
+ENGINE_URL = "http://127.0.0.1:8001"
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS_DIR = REPO_ROOT / "generator" / "scripts"
@@ -177,6 +179,17 @@ def loggable(payload: Dict[str, Any]) -> Dict[str, Any]:
     return safe
 
 
+#: What each server-derived state should be saying. A state and a message that disagree is a
+#: bug the user reads as the truth: `ready` carrying "Loading models. The first start takes
+#: minutes." left the panel insisting it was still loading while everything else said ready.
+SERVER_STATE_MESSAGES = {
+    BridgeState.NOT_INSTALLED: "The local generator is not installed.",
+    BridgeState.STOPPED: "The generator is stopped.",
+    BridgeState.STARTING: "Loading models. The first start takes minutes.",
+    BridgeState.READY: "Ready to generate.",
+}
+
+
 @dataclass
 class GenerationProgress:
     """What the UI shows while something is happening."""
@@ -221,6 +234,9 @@ class GeneratorBridge:
         runner: Optional[Callable[..., subprocess.CompletedProcess]] = None,
         log: Optional[Callable[[str], None]] = None,
         clock: Optional[Callable[[], float]] = None,
+        engine_url: str = ENGINE_URL,
+        observe_ttl_seconds: float = 2.0,
+        memory_ttl_seconds: float = 10.0,
     ) -> None:
         self._scripts_dir = Path(scripts_dir)
         self._output_dir = Path(output_dir)
@@ -238,6 +254,14 @@ class GeneratorBridge:
         self._cancel_requested = False
         self._owns_server = False
         self._last_result: Optional[Dict[str, Any]] = None
+
+        self._engine_url = engine_url
+        self._observe_ttl = observe_ttl_seconds
+        self._observed_state = BridgeState.STOPPED
+        self._observed_at: Optional[float] = None
+        self._memory: Dict[str, Any] = {}
+        self._memory_at: Optional[float] = None
+        self._memory_ttl = memory_ttl_seconds
 
     def _log(self, message: str) -> None:
         """Log, and swallow anything the logger does.
@@ -276,27 +300,96 @@ class GeneratorBridge:
             # Only overwrite states that are *about* the server, never a finished result.
             if payload["state"] in {BridgeState.STOPPED.value, BridgeState.STARTING.value,
                                     BridgeState.READY.value, BridgeState.NOT_INSTALLED.value}:
+                # State *and* message move together. Updating only the state is what produced
+                # a payload reading `state: ready` with "Loading models. The first start takes
+                # minutes." still attached, which the panel showed and the user believed.
+                message = SERVER_STATE_MESSAGES.get(observed, "")
                 payload["state"] = observed.value
+                payload["message"] = message
                 with self._lock:
                     self._progress.state = observed
+                    self._progress.message = message
         else:
             payload["server_state"] = BridgeState.READY.value
+
+        payload["memory"] = self.memory()
         return payload
 
     def _observe_server(self) -> BridgeState:
-        """Ask the shell scripts, which already know how to validate a PID safely."""
+        """What the engine is doing, without starting a process to find out.
+
+        This used to shell out to ``status_macos.sh`` on **every** ``/v1/state``. That script
+        spawns bash, curl, lsof, ps and python3 — five processes — and the deck polls once a
+        second while the models load. On a 16 GB machine already at 25 GB of swap, spawning
+        five processes a second is not diagnosis, it is part of the problem, and it filled the
+        engine's own log with `GET /health` besides.
+
+        The same three questions are answered here with no fork at all: is it installed (a
+        file test), is a process alive (``kill -0``, a syscall), and is it answering (one HTTP
+        request on loopback). The answer is cached briefly, so several UI polls in a row cost
+        one probe.
+
+        Safe stopping is unchanged and still goes through ``stop_macos.sh``, which validates a
+        PID against the process's own command line. Observing does not need that: reading a
+        stale PID can only mislead a status line, never signal the wrong process.
+        """
+        now = self._clock()
+        if self._observed_at is not None and now - self._observed_at < self._observe_ttl:
+            return self._observed_state
+
+        state = self._probe_server()
+        self._observed_state = state
+        self._observed_at = now
+        return state
+
+    def _probe_server(self) -> BridgeState:
         if not (self._scripts_dir / "status_macos.sh").exists():
             return BridgeState.NOT_INSTALLED
         if not (RUNTIME_ROOT / "ACE-Step-1.5" / ".venv").exists():
             return BridgeState.NOT_INSTALLED
 
-        result = self._runner(self._scripts_dir / "status_macos.sh")
-        # status_macos.sh: 0 ready, 3 not running, 4 starting, 5 http error.
-        if result.returncode == 0:
-            return BridgeState.READY
-        if result.returncode == 4:
+        health = self._engine_health()
+        if health is not None:
+            # It answers. Ready only once it says its models are loaded — a server that is
+            # accepting connections while still loading is exactly the case the deck must be
+            # able to tell apart.
+            return BridgeState.READY if health.get("models_initialized") else BridgeState.STARTING
+
+        # Not answering. A live PID means it is still coming up rather than absent.
+        pid = read_server_pid()
+        if pid is not None and process_is_running(pid):
             return BridgeState.STARTING
         return BridgeState.STOPPED
+
+    def memory(self) -> Dict[str, Any]:
+        """Swap and compressed memory, sampled at most every few seconds.
+
+        Reported so the deck can say what the machine is actually doing before the user starts
+        a ten-gigabyte load. The two figures that matter on a 16 GB Mac are the swap in use and
+        the compressor: resident set size of the server process does **not** describe the
+        load — most of a model's cost here is unified memory the kernel is compressing and
+        paging, which never appears in one process's RSS.
+        """
+        now = self._clock()
+        if self._memory_at is not None and now - self._memory_at < self._memory_ttl:
+            return self._memory
+
+        sample = _sample_memory()
+        self._memory = sample
+        self._memory_at = now
+        return sample
+
+    def _engine_health(self) -> Optional[Dict[str, Any]]:
+        """One loopback request, or None if nothing answered."""
+        try:
+            with urllib.request.urlopen(self._engine_url + "/health", timeout=3) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except Exception:
+            # Refused, timed out, or nonsense: all mean "not answering" to a status line.
+            return None
+
+        data = payload.get("data", payload)
+        return data if isinstance(data, dict) else None
 
     # ----------------------------------------------------------------- server
 
@@ -596,6 +689,56 @@ def _finite_number(value: Any, label: str) -> float:
 
 
 # --------------------------------------------------------------------- process
+
+
+#: Swap in use, in GB, above which the deck warns and recommends a restart. Chosen from the
+#: measured runs on this machine: a normal generation peaks near 19 GB, and the session that
+#: became unusable was at 25.5 GB with 0.08 GB of RAM free. Below 20 GB the machine has been
+#: observed to recover; above it, it has not.
+SWAP_WARNING_GB = 20.0
+
+#: Compressed memory above which the machine is already thrashing rather than merely busy.
+COMPRESSED_WARNING_GB = 6.0
+
+
+def _sample_memory() -> Dict[str, Any]:
+    """Swap, compressed and free memory. Two cheap reads, or empty on any failure."""
+    sample: Dict[str, Any] = {}
+    try:
+        swap = subprocess.run(["sysctl", "-n", "vm.swapusage"],
+                              capture_output=True, text=True, timeout=5).stdout
+        used = re.search(r"used\s*=\s*([0-9.]+)M", swap)
+        total = re.search(r"total\s*=\s*([0-9.]+)M", swap)
+        if used:
+            sample["swap_used_gb"] = round(float(used.group(1)) / 1024.0, 2)
+        if total:
+            sample["swap_total_gb"] = round(float(total.group(1)) / 1024.0, 2)
+
+        page = subprocess.run(["sysctl", "-n", "hw.pagesize"],
+                              capture_output=True, text=True, timeout=5).stdout.strip()
+        page_size = int(page) if page.isdigit() else 16384
+        stat = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=5).stdout
+        for key, label in (("Pages free", "free_gb"),
+                           ("Pages occupied by compressor", "compressed_gb")):
+            found = re.search(rf"{key}:\s+([0-9]+)", stat)
+            if found:
+                sample[label] = round(int(found.group(1)) * page_size / 1073741824.0, 2)
+    except Exception:
+        # A status line is not worth failing a request for.
+        return sample
+
+    swap_used = sample.get("swap_used_gb", 0.0)
+    compressed = sample.get("compressed_gb", 0.0)
+    sample["under_pressure"] = swap_used >= SWAP_WARNING_GB or compressed >= COMPRESSED_WARNING_GB
+    if sample["under_pressure"]:
+        sample["advice"] = (
+            f"This Mac is using {swap_used:.1f} GB of swap and "
+            f"{compressed:.1f} GB of compressed memory. Restart it before generating; "
+            f"macOS does not return this until reboot."
+        )
+    else:
+        sample["advice"] = ""
+    return sample
 
 
 def read_server_pid() -> Optional[int]:

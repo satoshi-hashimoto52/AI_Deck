@@ -154,8 +154,11 @@ class _Handler(BaseHTTPRequestHandler):
         except ValueError as exc:
             self._fail(400, str(exc), "invalid-input")
         except Exception as exc:  # never leave the deck waiting on a 200 that never comes
+            # The type alone is not diagnosable: "internal: NameError" says something is
+            # wrong and nothing about what. The message is included, redacted, so the deck's
+            # log names the fault instead of its category.
             self._fail(500, "The bridge failed to handle that request.",
-                       "internal", f"{type(exc).__name__}")
+                       "internal", f"{type(exc).__name__}: {exc}")
 
 
 class _LoopbackServer(socketserver.ThreadingMixIn, HTTPServer):

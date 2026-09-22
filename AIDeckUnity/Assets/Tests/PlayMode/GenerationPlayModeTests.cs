@@ -54,12 +54,20 @@ namespace AIDeck.Tests.PlayMode
                 string fileName = "",
                 string filePath = "",
                 double duration = 0d,
-                string errorKind = "")
+                string errorKind = "",
+                MemoryPressure memory = default,
+                bool notify = true)
             {
                 _status = new GeneratorStatus(
                     state, message, 0f, errorKind, string.Empty,
-                    fileName, filePath, duration, false);
-                StatusChanged?.Invoke(_status);
+                    fileName, filePath, duration, false, memory);
+
+                // notify:false models a dropped notification — the case that used to strand
+                // the panel on "Starting" for the rest of the session.
+                if (notify)
+                {
+                    StatusChanged?.Invoke(_status);
+                }
             }
         }
 
@@ -785,6 +793,184 @@ namespace AIDeck.Tests.PlayMode
             yield return LetUiCatchUp();
             Assert.That(((AIDeck.UI.ITouchTarget)FindButton("GenerateNow")).TouchEnabled, Is.True,
                 "GENERATE never opened although the generator reported ready");
+        }
+
+        // ------------------------------------------------- state sync and convergence
+        //
+        // Reported from the machine: ACE-Step said models_initialized, the bridge said ready,
+        // the log said State Ready — and the sheet still read "Starting — loading models" with
+        // GENERATE greyed until it was closed and reopened.
+
+        [UnityTest]
+        public IEnumerator TheSheetFollowsStartingThroughToReadyWhileItIsOpen()
+        {
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+
+            _bridge.Push(GeneratorState.Starting, "Loading models. The first start takes minutes.");
+            yield return LetUiCatchUp();
+            Assert.That(FindText("State").text, Does.Contain("Starting"));
+            Assert.That(_host.Screen.Generate.CanGenerateNow, Is.False);
+
+            _bridge.Push(GeneratorState.Ready, "Ready to generate.");
+            yield return LetUiCatchUp();
+
+            Assert.That(FindText("State").text, Does.Contain("Ready"),
+                "the sheet stayed on the old state after the generator became ready");
+            Assert.That(_host.Screen.Generate.CanGenerateNow, Is.True,
+                "GENERATE never became available");
+        }
+
+        [UnityTest]
+        public IEnumerator TheSheetCatchesUpEvenWhenTheNotificationIsLost()
+        {
+            // One dropped StatusChanged used to mean the screen never caught up, and the only
+            // way back was CLOSE then reopen. It must converge within a frame or two instead.
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+
+            _bridge.Push(GeneratorState.Starting, "Loading models. The first start takes minutes.");
+            yield return LetUiCatchUp();
+
+            _bridge.Push(GeneratorState.Ready, "Ready to generate.", notify: false);
+            yield return LetUiCatchUp();
+            yield return LetUiCatchUp();
+
+            Assert.That(FindText("State").text, Does.Contain("Ready"),
+                "the sheet did not converge on the bridge's current state");
+            Assert.That(_host.Screen.Generate.CanGenerateNow, Is.True);
+        }
+
+        [UnityTest]
+        public IEnumerator GenerateIsOfferedWhenReadyAndTheRoomIsQuiet()
+        {
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+
+            _bridge.Push(GeneratorState.Ready, "Ready to generate.");
+            yield return LetUiCatchUp();
+
+            Assert.That(_host.Screen.Generate.CanGenerateNow, Is.True);
+            Assert.That(((AIDeck.UI.ITouchTarget)FindButton("GenerateNow")).TouchEnabled, Is.True);
+        }
+
+        [UnityTest]
+        public IEnumerator GenerateIsRefusedWhileRecordingEvenWhenReady()
+        {
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+
+            _bridge.Push(GeneratorState.Ready, "Ready to generate.");
+            yield return LetUiCatchUp();
+            Assert.That(_host.Screen.Generate.CanGenerateNow, Is.True);
+
+            _host.Engine.StartRecording();
+            yield return LetUiCatchUp();
+            yield return LetUiCatchUp();
+
+            var offered = _host.Screen.Generate.CanGenerateNow;
+            var reason = FindText("Message").text;
+            _host.Engine.StopRecording();
+
+            Assert.That(offered, Is.False, "GENERATE stayed available while recording");
+            Assert.That(reason, Is.Not.Empty, "no readable reason was shown for the refusal");
+            Assert.That(reason, Does.Contain("recording"));
+        }
+
+        [UnityTest]
+        public IEnumerator GenerateIsRefusedWhileADeckPlaysEvenWhenReady()
+        {
+            yield return LetUiCatchUp();
+            AddTrack("Sync Gate Tone", 220f);
+            yield return LetUiCatchUp();
+            yield return LoadAndPlayDeckA();
+
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+            _bridge.Push(GeneratorState.Ready, "Ready to generate.");
+            yield return LetUiCatchUp();
+
+            var offered = _host.Screen.Generate.CanGenerateNow;
+            var reason = FindText("Message").text;
+            _host.Engine.DeckA.TogglePlay();
+
+            Assert.That(offered, Is.False, "GENERATE stayed available while a deck was playing");
+            Assert.That(reason, Does.Contain("Stop both decks"));
+        }
+
+        [UnityTest]
+        public IEnumerator AnIdenticalStatusDoesNotRelayoutEveryFrame()
+        {
+            // The sheet converges every frame now. That must cost a string comparison, not a
+            // layout pass, on a machine that is already short of frames.
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+            _bridge.Push(GeneratorState.Ready, "Ready to generate.");
+            yield return LetUiCatchUp();
+
+            var before = _host.Screen.Generate.LayoutCount;
+            for (var frame = 0; frame < 30; frame++)
+            {
+                yield return null;
+            }
+
+            Assert.That(_host.Screen.Generate.LayoutCount, Is.EqualTo(before),
+                "the sheet laid itself out again despite nothing changing");
+        }
+
+        [UnityTest]
+        public IEnumerator AChangedStatusDoesRelayoutOnce()
+        {
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+            _bridge.Push(GeneratorState.Starting, "Loading models. The first start takes minutes.");
+            yield return LetUiCatchUp();
+
+            var before = _host.Screen.Generate.LayoutCount;
+            _bridge.Push(GeneratorState.Ready, "Ready to generate.");
+            yield return LetUiCatchUp();
+
+            Assert.That(_host.Screen.Generate.LayoutCount, Is.GreaterThan(before),
+                "a real change did not reach the screen");
+        }
+
+        [UnityTest]
+        public IEnumerator SevereMemoryPressureIsShownWithItsNumbersAndAdvice()
+        {
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+
+            var pressed = new MemoryPressure(25.5f, 7.3f, 0.08f, true,
+                "This Mac is using 25.5 GB of swap and 7.3 GB of compressed memory. "
+                + "Restart it before generating; macOS does not return this until reboot.");
+            _bridge.Push(GeneratorState.Ready, "Ready to generate.", memory: pressed);
+            yield return LetUiCatchUp();
+
+            var warning = FindText("Warning").text;
+            Assert.That(warning, Does.Contain("25.5"));
+            Assert.That(warning, Does.Contain("Restart"));
+        }
+
+        [UnityTest]
+        public IEnumerator AHealthyMachineKeepsTheStandingWarningNotAnAlarm()
+        {
+            yield return LetUiCatchUp();
+            Click(FindButton("Generate"));
+            yield return LetUiCatchUp();
+
+            _bridge.Push(GeneratorState.Ready, "Ready to generate.",
+                memory: new MemoryPressure(2f, 1f, 6f, false, string.Empty));
+            yield return LetUiCatchUp();
+
+            Assert.That(FindText("Warning").text, Does.Contain("first start"),
+                "the standing guidance disappeared on a healthy machine");
         }
 
         private IEnumerator LoadAndPlayDeckA()

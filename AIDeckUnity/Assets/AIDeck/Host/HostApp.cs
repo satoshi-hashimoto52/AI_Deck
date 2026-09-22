@@ -262,6 +262,12 @@ namespace AIDeck.Host
 
         private void Update()
         {
+            // Before the refresh throttle: the generation sheet converges on the bridge's
+            // current value rather than waiting for a notification, and a state change should
+            // reach the screen without waiting out the deck's own refresh interval. It costs
+            // one string comparison when nothing has moved.
+            _generation?.Tick();
+
             _refreshTimer += Time.unscaledDeltaTime;
             if (_refreshTimer < RefreshInterval)
             {

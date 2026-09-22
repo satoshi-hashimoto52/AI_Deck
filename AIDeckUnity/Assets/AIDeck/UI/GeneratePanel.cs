@@ -53,6 +53,15 @@ namespace AIDeck.UI
         /// <summary>Smallest size anywhere on this sheet. Asserted by a test.</summary>
         public const int MinimumFontSize = 14;
 
+        /// <summary>
+        /// Whether GENERATE is offered: the generator can start work *and* the room is quiet.
+        /// Exposed so a test can assert the rule rather than infer it from a colour.
+        /// </summary>
+        public bool CanGenerateNow { get; private set; }
+
+        /// <summary>How many times the layout has actually run. For the no-churn test.</summary>
+        public int LayoutCount { get; private set; }
+
         private RectTransform _card;
         private RectTransform _viewport;
         private RectTransform _content;
@@ -145,10 +154,7 @@ namespace AIDeck.UI
 
             // Said before anything is pressed, not after it hurts. Both numbers are measured
             // on this machine and are in docs/GENERATOR_PHASE1.md.
-            _warningLine = UiFactory.CreateText("Warning", _content,
-                "The first start loads about 10 GB and takes a few minutes. On 16 GB this "
-                + "swaps heavily — around 19 GB during a 30-second track — so stop the decks "
-                + "before generating.",
+            _warningLine = UiFactory.CreateText("Warning", _content, StandingWarning,
                 WarningSize, TextAnchor.UpperLeft, Theme.Warning);
             _warningLine.horizontalOverflow = HorizontalWrapMode.Wrap;
             // Overflow rather than Truncate: the layout measures this label and gives it the
@@ -194,6 +200,12 @@ namespace AIDeck.UI
             }
 
         }
+
+        /// <summary>Shown whenever the machine is not already in trouble.</summary>
+        private const string StandingWarning =
+            "The first start loads about 10 GB and takes a few minutes. On 16 GB this swaps "
+            + "heavily — around 19 GB during a 30-second track — so stop the decks before "
+            + "generating.";
 
         private static string StopAfterLabel(bool on) =>
             on
@@ -302,9 +314,19 @@ namespace AIDeck.UI
             _stateLine.color = ColourFor(status.State);
 
             // A refusal from the gate is more useful than the generator's own idle message,
-            // so it wins the one line there is room for.
+            // so it wins the one line there is room for. When nothing is refused the message
+            // must never contradict the state above it — a `ready` carrying "Loading models"
+            // is what made the sheet look stuck, and the bridge now keeps the two together.
             _messageLine.text = gate.IsAllowed ? status.Message : gate.Reason;
             _messageLine.color = gate.IsAllowed ? Theme.TextDim : Theme.Warning;
+
+            // The machine's own numbers, only when they are bad enough to act on. A generation
+            // started at 25 GB of swap does not fail; it makes the whole Mac unusable, and
+            // that is worth saying before the button is pressed rather than after.
+            _warningLine.text = status.Memory.UnderPressure && !string.IsNullOrEmpty(status.Memory.Advice)
+                ? status.Memory.Advice
+                : StandingWarning;
+            _warningLine.color = status.Memory.UnderPressure ? Theme.Danger : Theme.Warning;
 
             if (status.State == GeneratorState.Failed && !string.IsNullOrEmpty(status.Message))
             {
@@ -326,7 +348,12 @@ namespace AIDeck.UI
             _loadBButton.gameObject.SetActive(completed);
 
             var busy = status.State.IsBusy();
-            _generateButton.State = gate.IsAllowed ? ButtonVisualState.Normal : ButtonVisualState.Disabled;
+
+            // Stated in one place, in the terms the requirement uses: the generator must be in
+            // a state that can start work, and the room must be quiet. Either one alone is not
+            // enough, and whichever fails has already put its reason on the message line.
+            CanGenerateNow = status.State.CanGenerate() && gate.IsAllowed;
+            _generateButton.State = CanGenerateNow ? ButtonVisualState.Normal : ButtonVisualState.Disabled;
             _cancelButton.State = busy ? ButtonVisualState.Normal : ButtonVisualState.Disabled;
             _startServerButton.State =
                 status.State == GeneratorState.Stopped || status.State == GeneratorState.Unknown
@@ -390,8 +417,34 @@ namespace AIDeck.UI
 
         private void OnRectTransformDimensionsChange() => Layout();
 
+        /// <summary>Guards against re-entering the layout from inside itself.</summary>
+        private bool _laying;
+
         private void Layout()
         {
+            // Measuring a wrapping label reads Text.preferredHeight, which asks Unity to
+            // rebuild the canvas, which can call OnRectTransformDimensionsChange straight back
+            // into here. Before this guard that recursion had no bottom: it blew the stack and
+            // took the player down with a hard crash and no managed exception to explain it.
+            if (_laying)
+            {
+                return;
+            }
+
+            _laying = true;
+            try
+            {
+                LayoutInner();
+            }
+            finally
+            {
+                _laying = false;
+            }
+        }
+
+        private void LayoutInner()
+        {
+            LayoutCount++;
             var rect = (RectTransform)transform;
             var width = rect.rect.width;
             var height = rect.rect.height;

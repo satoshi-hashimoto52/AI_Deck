@@ -111,3 +111,8 @@ AIDeckUnity/Assets/Resources.meta
 # Python bytecode from running the generator client and its tests
 __pycache__/
 *.py[cod]
+
+# Unity writes a temporary scene per PlayMode run and deletes it afterwards — unless the run
+# crashes, which leaves them behind in Assets/.
+AIDeckUnity/Assets/InitTestScene*.unity
+AIDeckUnity/Assets/InitTestScene*.unity.meta

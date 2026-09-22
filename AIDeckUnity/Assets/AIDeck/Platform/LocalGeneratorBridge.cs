@@ -243,21 +243,33 @@ namespace AIDeck.Platform
 
         private IEnumerator PollOnce()
         {
-            yield return Get("/v1/state");
-
-            if (_status.State == GeneratorState.Unknown && !_startedBridge)
+            // try/finally, not an early reset. Clearing the in-flight flag up front looked
+            // like exception-safety and was the opposite: Update then started a fresh poll
+            // coroutine every frame, and the nested coroutines blew the stack within seconds.
+            // The finally still runs when a subscriber throws, which is what the flag needed
+            // protecting against in the first place.
+            try
             {
-                // Nothing is listening. Launching the bridge is cheap — it imports no model
-                // and holds no weights — so it is started on demand rather than asking the
-                // user to run a second command. The *engine* still needs an explicit press.
-                TryStartBridgeProcess();
-            }
+                yield return Get("/v1/state");
 
-            var interval = _status.State.IsBusy() || _status.State == GeneratorState.Starting
-                ? BusyPollSeconds
-                : IdlePollSeconds;
-            _nextPollTime = Time.realtimeSinceStartup + interval;
-            _pollInFlight = false;
+                if (_status.State == GeneratorState.Unknown && !_startedBridge)
+                {
+                    // Nothing is listening. Launching the bridge is cheap — it imports no
+                    // model and holds no weights — so it is started on demand rather than
+                    // asking the user to run a second command. The *engine* still needs an
+                    // explicit press.
+                    TryStartBridgeProcess();
+                }
+            }
+            finally
+            {
+                // A generator that is loading is watched more closely than one that is stopped.
+                _nextPollTime = Time.realtimeSinceStartup
+                                + (_status.State.IsBusy() || _status.State == GeneratorState.Starting
+                                    ? BusyPollSeconds
+                                    : IdlePollSeconds);
+                _pollInFlight = false;
+            }
         }
 
         private IEnumerator Get(string path)
@@ -338,17 +350,29 @@ namespace AIDeck.Platform
                 hasResult ? result["audio_file"].AsString(string.Empty) : string.Empty,
                 hasResult ? result["audio_path"].AsString(string.Empty) : string.Empty,
                 hasResult ? result["duration_seconds"].AsDouble() : 0d,
-                data["owns_server"].AsBool());
+                data["owns_server"].AsBool(),
+                ReadMemory(data["memory"]));
+        }
+
+        private static MemoryPressure ReadMemory(JsonValue memory)
+        {
+            if (memory == null || memory.Kind != JsonKind.Object)
+            {
+                return MemoryPressure.None;
+            }
+
+            return new MemoryPressure(
+                memory["swap_used_gb"].AsFloat(),
+                memory["compressed_gb"].AsFloat(),
+                memory["free_gb"].AsFloat(),
+                memory["under_pressure"].AsBool(),
+                memory["advice"].AsString(string.Empty));
         }
 
         private void Apply(GeneratorStatus status)
         {
-            var changed =
-                status.State != _status.State
-                || status.Message != _status.Message
-                || !Mathf.Approximately(status.ElapsedSeconds, _status.ElapsedSeconds)
-                || status.CompletedFileName != _status.CompletedFileName
-                || status.ErrorKind != _status.ErrorKind;
+            var changed = status.DisplaySignature != _status.DisplaySignature
+                          || status.CompletedFilePath != _status.CompletedFilePath;
 
             var stateChanged = status.State != _status.State;
             _status = status;

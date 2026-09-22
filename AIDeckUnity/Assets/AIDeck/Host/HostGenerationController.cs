@@ -73,11 +73,75 @@ namespace AIDeck.Host
         {
             _panel.SetVisible(true);
             _panel.ShowFieldError(string.Empty);
-            Refresh();
+
+            // Forced: the sheet was just built or re-shown, so whatever was rendered last time
+            // is not on screen any more even if the status has not moved.
+            Refresh(force: true);
         }
 
-        public void Refresh() =>
-            _panel.Apply(_bridge.Status, GenerationSafetyGate.Evaluate(_readActivity(), _bridge.Status.State));
+        /// <summary>What the panel currently shows, so an identical poll costs nothing.</summary>
+        private string _rendered = string.Empty;
+
+        /// <summary>
+        /// Brings the sheet up to date with the bridge, if it is not already.
+        ///
+        /// Called every frame while the sheet is open — see <see cref="Tick"/> — rather than
+        /// only from <c>StatusChanged</c>. The push-only version left the panel reading
+        /// "Starting — loading models" while the bridge, the engine and the log all said
+        /// ready: one missed notification and the screen never caught up, and the only way
+        /// back was to close and reopen the sheet.
+        ///
+        /// Converging on the current value makes a dropped notification cost one frame instead
+        /// of the whole session. The signature comparison is what stops that turning into a
+        /// layout pass every frame.
+        /// </summary>
+        private bool _refreshing;
+
+        public void Refresh(bool force = false)
+        {
+            // Applying a status touches text and active states, any of which can make Unity
+            // rebuild the canvas and deliver a layout callback that lands back here. Converging
+            // every frame turned that into unbounded recursion and a hard crash; re-entering is
+            // never useful, because the outer call is already rendering the current value.
+            if (_refreshing)
+            {
+                return;
+            }
+
+            var status = _bridge.Status;
+            var gate = GenerationSafetyGate.Evaluate(_readActivity(), status.State);
+            var signature = status.DisplaySignature + "|" + gate.IsAllowed + "|" + gate.Reason;
+
+            if (!force && signature == _rendered)
+            {
+                return;
+            }
+
+            _rendered = signature;
+            _refreshing = true;
+            try
+            {
+                _panel.Apply(status, gate);
+            }
+            finally
+            {
+                _refreshing = false;
+            }
+        }
+
+        /// <summary>
+        /// Driven from the host's <c>Update</c>. Does nothing while the sheet is closed.
+        ///
+        /// Cheap by construction: it reads two in-memory values and compares one string. The
+        /// expensive part — the layout — happens only when that string changes.
+        /// </summary>
+        public void Tick()
+        {
+            if (_panel.IsVisible)
+            {
+                Refresh();
+            }
+        }
 
         private void OnStartServer()
         {
@@ -134,10 +198,9 @@ namespace AIDeck.Host
                 }
             }
 
-            if (_panel.IsVisible)
-            {
-                Refresh();
-            }
+            // The per-frame tick would pick this up anyway; doing it here too means a state
+            // change is on screen in the same frame it arrives.
+            Tick();
         }
 
         /// <summary>

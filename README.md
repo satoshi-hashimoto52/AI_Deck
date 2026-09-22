@@ -132,7 +132,7 @@ Exit code 0 means everything passed. Current:
 | Suite | Tests | Passed | Failed |
 | --- | --- | --- | --- |
 | EditMode | 386 | 386 | 0 |
-| PlayMode | 125 | 125 | 0 |
+| PlayMode | 134 | 134 | 0 |
 | 30-minute soak (opt-in) | 1 | 1 | 0 |
 
 The soak is opt-in through `AIDECK_SOAK_MINUTES`; without it that one test reports *ignored*,

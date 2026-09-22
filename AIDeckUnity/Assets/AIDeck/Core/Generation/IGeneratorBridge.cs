@@ -2,6 +2,33 @@ using System;
 
 namespace AIDeck.Core.Generation
 {
+    /// <summary>What the machine's memory is doing, as the bridge measured it.</summary>
+    public readonly struct MemoryPressure
+    {
+        public MemoryPressure(float swapUsedGb, float compressedGb, float freeGb,
+                              bool underPressure, string advice)
+        {
+            SwapUsedGb = swapUsedGb;
+            CompressedGb = compressedGb;
+            FreeGb = freeGb;
+            UnderPressure = underPressure;
+            Advice = advice ?? string.Empty;
+        }
+
+        public float SwapUsedGb { get; }
+        public float CompressedGb { get; }
+        public float FreeGb { get; }
+
+        /// <summary>True when the machine is thrashing rather than merely busy.</summary>
+        public bool UnderPressure { get; }
+
+        /// <summary>A sentence with the real numbers in it, or empty.</summary>
+        public string Advice { get; }
+
+        public static MemoryPressure None =>
+            new MemoryPressure(0f, 0f, 0f, false, string.Empty);
+    }
+
     /// <summary>One snapshot of what the generator is doing.</summary>
     public readonly struct GeneratorStatus
     {
@@ -14,8 +41,10 @@ namespace AIDeck.Core.Generation
             string completedFileName,
             string completedFilePath,
             double completedDurationSeconds,
-            bool ownsServer)
+            bool ownsServer,
+            MemoryPressure memory = default)
         {
+            Memory = memory;
             State = state;
             Message = message ?? string.Empty;
             ElapsedSeconds = elapsedSeconds;
@@ -53,6 +82,20 @@ namespace AIDeck.Core.Generation
 
         /// <summary>True when AI Deck started the engine, and so must stop it when it quits.</summary>
         public bool OwnsServer { get; }
+
+        /// <summary>Swap and compressed memory as the bridge last sampled them.</summary>
+        public MemoryPressure Memory { get; }
+
+        /// <summary>
+        /// Everything the sheet draws, in one comparable value.
+        ///
+        /// The panel re-lays out only when this changes. Polling produces an identical status
+        /// several times a second, and re-running the layout each time would burn frames on a
+        /// machine that is already short of them.
+        /// </summary>
+        public string DisplaySignature =>
+            $"{State}|{Message}|{ErrorKind}|{CompletedFileName}|{ElapsedSeconds:F0}|"
+            + $"{Memory.UnderPressure}|{Memory.Advice}";
 
         public static GeneratorStatus Unknown(string message) => new GeneratorStatus(
             GeneratorState.Unknown, message, 0f, string.Empty, string.Empty,
